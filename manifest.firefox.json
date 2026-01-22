@@ -1,32 +1,32 @@
 {
-  "manifest_version": 3,
+  "manifest_version": 2,
   "name": "CourseMate",
   "short_name": "CourseMate",
   "version": "1.0.2",
   "description": "Displays RateMyProfessors ratings and CougarGrades data on University of Houston course pages",
   "permissions": [
-    "storage"
-  ],
-  "host_permissions": [
+    "storage",
     "https://*.uh.edu/*",
     "https://www.ratemyprofessors.com/*",
     "https://cougargrades.io/*",
-    "https://unpkg.com/*"
+    "https://unpkg.com/*",
+    "https://www.google-analytics.com/*"
   ],
   "background": {
-    "service_worker": "background.js"
+    "scripts": ["browser-polyfill.js", "background.js"],
+    "persistent": false
   },
   "content_scripts": [
     {
       "matches": [
         "https://*.uh.edu/*"
       ],
-      "js": ["contentScript.js"],
+      "js": ["browser-polyfill.js", "contentScript.js"],
       "css": ["ui.css"],
       "run_at": "document_idle"
     }
   ],
-  "action": {
+  "browser_action": {
     "default_popup": "options.html",
     "default_icon": {
       "16": "icons/icon16.png",
@@ -34,10 +34,22 @@
       "128": "icons/icon128.png"
     }
   },
-  "options_page": "options.html",
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "coursemate@uh.edu",
+      "strict_min_version": "109.0"
+    }
+  },
+  "data_collection_permissions": {
+    "analytics_storage": true
   }
 }

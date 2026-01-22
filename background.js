@@ -5,6 +5,51 @@
 
 console.log('[Background] Service worker started');
 
+// Google Analytics Configuration
+const GA_MEASUREMENT_ID = 'G-JBRCLEKVZT';
+const GA_API_SECRET = ''; // Optional: Add API secret from GA4 for Measurement Protocol
+
+/**
+ * Generate or retrieve a unique client ID for analytics
+ */
+async function getClientId() {
+  const result = await chrome.storage.local.get(['analyticsClientId']);
+  if (result.analyticsClientId) {
+    return result.analyticsClientId;
+  }
+  const clientId = crypto.randomUUID();
+  await chrome.storage.local.set({ analyticsClientId: clientId });
+  return clientId;
+}
+
+/**
+ * Send event to Google Analytics 4
+ */
+async function sendAnalyticsEvent(eventName, params = {}) {
+  try {
+    const clientId = await getClientId();
+    const payload = {
+      client_id: clientId,
+      events: [{
+        name: eventName,
+        params: {
+          engagement_time_msec: '100',
+          ...params
+        }
+      }]
+    };
+
+    const url = `https://www.google-analytics.com/mp/collect?measurement_id=${GA_MEASUREMENT_ID}&api_secret=${GA_API_SECRET}`;
+
+    await fetch(url, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  } catch (error) {
+    console.error('[Analytics] Error sending event:', error);
+  }
+}
+
 // Rate limiting configuration
 const RATE_LIMIT = {
   requestsPerSecond: 1,
@@ -822,6 +867,12 @@ async function fetchProfessorData(professorName, school = 'University of Houston
     // Cache the result (even if not found, to prevent repeated lookups)
     await saveToCache(cacheKey, result);
 
+    // Track professor lookup
+    sendAnalyticsEvent('professor_lookup', {
+      found: result.found ? 'yes' : 'no',
+      school: school
+    });
+
     return result;
 
   } catch (error) {
@@ -970,7 +1021,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 /**
  * Initialize default settings on install
  */
-chrome.runtime.onInstalled.addListener(async () => {
+chrome.runtime.onInstalled.addListener(async (details) => {
   const defaults = {
     extensionEnabled: true,
     defaultSchool: 'University of Houston',
@@ -991,5 +1042,17 @@ chrome.runtime.onInstalled.addListener(async () => {
   if (Object.keys(toSet).length > 0) {
     await chrome.storage.local.set(toSet);
     console.log('CourseMate: Initialized with default settings');
+  }
+
+  // Track install/update events
+  if (details.reason === 'install') {
+    sendAnalyticsEvent('extension_installed', {
+      version: chrome.runtime.getManifest().version
+    });
+  } else if (details.reason === 'update') {
+    sendAnalyticsEvent('extension_updated', {
+      previous_version: details.previousVersion,
+      version: chrome.runtime.getManifest().version
+    });
   }
 });

@@ -56,7 +56,7 @@ const hoverState = {
  * Extract professor name from element
  */
 function extractProfessorName(element) {
-  let text = element.textContent.trim();
+  let text = element.textContent.trim().replace(/\s+/g, ' ');
 
   // Skip empty or very short text
   if (!text || text.length < 3) return null;
@@ -72,16 +72,21 @@ function extractProfessorName(element) {
     if (pattern.test(text)) return null;
   }
 
-  // Look for name patterns
-  // Matches: "Last, First", "First Last", "First M. Last"
-  const namePatterns = [
-    /^([A-Z][a-z]+),\s*([A-Z][a-z]+)/,  // Last, First
-    /^([A-Z][a-z]+)\s+([A-Z]\.?\s+)?([A-Z][a-z]+)$/,  // First M. Last or First Last
-    /^([A-Z\s]+),\s*([A-Z\s]+)$/  // ALL CAPS: LAST, FIRST
-  ];
-
-  for (const pattern of namePatterns) {
-    if (pattern.test(text)) {
+  // Accept common name formats, including middle names/initials and punctuation.
+  if (text.includes(',')) {
+    const parts = text.split(',').map(part => part.trim()).filter(Boolean);
+    if (parts.length >= 2) {
+      const last = parts[0];
+      const firstParts = parts[1].split(' ').filter(Boolean);
+      const tokenPattern = /^[A-Za-z][A-Za-z'.-]*$/;
+      if (tokenPattern.test(last) && firstParts.length >= 1 && firstParts.every(part => tokenPattern.test(part))) {
+        return text;
+      }
+    }
+  } else {
+    const tokens = text.split(' ').filter(Boolean);
+    const tokenPattern = /^[A-Za-z][A-Za-z'.-]*$/;
+    if (tokens.length >= 2 && tokens.every(token => tokenPattern.test(token))) {
       return text;
     }
   }
@@ -642,14 +647,34 @@ function initMutationObserver() {
 }
 
 /**
+ * Check if extension is enabled
+ */
+async function isExtensionEnabled() {
+  try {
+    const { extensionEnabled } = await chrome.storage.local.get(['extensionEnabled']);
+    return extensionEnabled !== false; // Default to true if not set
+  } catch (error) {
+    console.error('[CourseMate] Error checking extension state:', error);
+    return true; // Default to enabled on error
+  }
+}
+
+/**
  * Initialize content script
  */
-function init() {
+async function init() {
   console.log('[CourseMate] Content script loaded');
 
   // Wait for DOM to be fully loaded
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
+    return;
+  }
+
+  // Check if extension is enabled
+  const enabled = await isExtensionEnabled();
+  if (!enabled) {
+    console.log('[CourseMate] Extension is disabled');
     return;
   }
 
@@ -676,6 +701,36 @@ function init() {
       positionTooltip(hoverState.activeBadge);
     }
   });
+
+  // Listen for extension enable/disable changes
+  chrome.storage.onChanged.addListener((changes, namespace) => {
+    if (namespace === 'local' && changes.extensionEnabled) {
+      const enabled = changes.extensionEnabled.newValue !== false;
+      if (enabled) {
+        console.log('[CourseMate] Extension enabled, scanning page...');
+        scanPage();
+      } else {
+        console.log('[CourseMate] Extension disabled, removing badges...');
+        removeBadges();
+      }
+    }
+  });
+}
+
+/**
+ * Remove all CourseMate badges from the page
+ */
+function removeBadges() {
+  document.querySelectorAll('.coursemate-badge').forEach(badge => {
+    activeBadges.delete(badge);
+    badge.remove();
+  });
+  processedElements.clear();
+
+  // Hide tooltip if visible
+  if (courseMateTooltip) {
+    courseMateTooltip.classList.remove('show');
+  }
 }
 
 // Start the extension
