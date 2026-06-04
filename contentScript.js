@@ -459,13 +459,43 @@ function createRatingBadge(data, context) {
 }
 
 /**
- * Create "not found" badge
+ * Create "not found" badge with hover tooltip linking to add a rating
  */
-function createNotFoundBadge() {
+function createNotFoundBadge(professorName) {
   const badge = document.createElement('span');
   badge.className = 'coursemate-badge coursemate-not-found';
   badge.textContent = '?';
-  badge.title = 'No ratings found on RateMyProfessors';
+  badge.style.cursor = 'pointer';
+
+  badge.addEventListener('mouseenter', () => {
+    if (hoverState.hideTimeout) clearTimeout(hoverState.hideTimeout);
+    hoverState.activeBadge = badge;
+    const tooltip = ensureTooltip();
+    tooltip.innerHTML = `
+      <div class="coursemate-tooltip-header">
+        <div class="coursemate-tooltip-name">${escapeHtml(professorName || 'Professor')}</div>
+      </div>
+      <div class="coursemate-tooltip-section">
+        <div class="coursemate-tooltip-loading">No RMP rating found for this professor.</div>
+      </div>
+      <div class="coursemate-tooltip-footer">
+        <a class="coursemate-tooltip-link" href="https://www.ratemyprofessors.com/add/professor" target="_blank" rel="noreferrer">Rate this professor -></a>
+      </div>
+    `;
+    tooltip.classList.add('show');
+    positionTooltip(badge);
+  });
+
+  badge.addEventListener('mouseleave', () => {
+    scheduleHideTooltip();
+  });
+
+  badge.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    window.open('https://www.ratemyprofessors.com/add/professor', '_blank');
+  });
+
   return badge;
 }
 
@@ -547,7 +577,7 @@ async function processProfessorElement(element) {
         courseInfo
       });
     } else {
-      finalBadge = createNotFoundBadge();
+      finalBadge = createNotFoundBadge(professorName);
     }
 
     // Replace loading badge with final badge

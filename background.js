@@ -21,7 +21,7 @@ function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
 // Cache configuration
 const CACHE_CONFIG = {
   defaultTTL: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
-  prefix: 'courseMate_v4_'
+  prefix: 'courseMate_v5_'
 };
 
 /**
@@ -239,14 +239,10 @@ const RMPProvider = {
 
     if (lastMatches.length === 0) return null;
 
-    // Only one candidate — return without further checks
-    if (lastMatches.length === 1) {
-      return { found: true, data: this._buildData(lastMatches[0].node) };
-    }
-
-    // Multiple candidates with same last name — score each by:
-    //   • first-name prefix match  (Matt ↔ Matthew)
-    //   • department ↔ course subject alignment
+    // Score every last-name candidate — always require positive evidence.
+    // Never return a professor just because they share a last name;
+    // the first name must prefix-match OR the department must align.
+    // This prevents Zoe Ortiz from being returned for Matthew Ortiz.
     const scored = lastMatches.map(edge => {
       const prof = edge.node;
       const profFirst = prof.firstName.toLowerCase();
@@ -258,9 +254,6 @@ const RMPProvider = {
 
     scored.sort((a, b) => b.score - a.score);
 
-    // Return the best-scored candidate only if we have at least one signal.
-    // If every candidate scores 0 we can't distinguish them — return null
-    // rather than silently show the wrong professor.
     if (scored[0].score > 0) {
       return { found: true, data: this._buildData(scored[0].prof) };
     }
