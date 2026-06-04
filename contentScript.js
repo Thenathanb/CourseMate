@@ -278,33 +278,14 @@ function renderTooltipContent({ professorName, baseData, hoverData, courseInfo, 
   const difficulty = baseData?.difficulty !== undefined ? baseData.difficulty.toFixed(1) : 'N/A';
   const wouldTakeAgain = baseData?.wouldTakeAgainPercent !== undefined ? `${baseData.wouldTakeAgainPercent}%` : 'N/A';
   const rmpUrl = baseData?.rmpUrl;
-  const cougarGradesUrl = hoverData?.cougarGradesUrl;
-  const gradeData = hoverData?.gradeDistribution;
   const reviews = hoverData?.reviews || [];
   const isLoading = loading && !hoverData;
-
-  const gradeRows = isLoading
-    ? '<div class="coursemate-tooltip-loading">Loading grade data...</div>'
-    : gradeData?.percentages ? ['A', 'B', 'C', 'D', 'F'].map(letter => {
-      const value = gradeData.percentages[letter] ?? 0;
-      return `
-        <div class="coursemate-grade-row">
-          <div class="coursemate-grade-label">${letter}</div>
-          <div class="coursemate-grade-bar">
-            <div class="coursemate-grade-bar-fill" style="width: ${value}%"></div>
-          </div>
-          <div class="coursemate-grade-value">${value}%</div>
-        </div>
-      `;
-    }).join('') : `<div class="coursemate-tooltip-loading">${courseInfo ? 'Grade data unavailable.' : 'Course not detected on page.'}</div>`;
 
   const reviewsHtml = isLoading
     ? '<div class="coursemate-tooltip-loading">Loading reviews...</div>'
     : reviews.length > 0 ? reviews.map(review => `
       <div class="coursemate-review">"${escapeHtml(truncateText(review.comment || '', 160))}"</div>
     `).join('') : '<div class="coursemate-tooltip-loading">No recent reviews found.</div>';
-
-  const courseLabel = gradeData?.course || courseInfo?.display;
 
   tooltip.innerHTML = `
     <div class="coursemate-tooltip-header">
@@ -313,18 +294,11 @@ function renderTooltipContent({ professorName, baseData, hoverData, courseInfo, 
     </div>
     <div class="coursemate-tooltip-subheader">Difficulty: ${difficulty} | ${wouldTakeAgain} Would Take Again</div>
     <div class="coursemate-tooltip-section">
-      <div class="coursemate-tooltip-section-title">Grade Distribution${courseLabel ? ` (${escapeHtml(courseLabel)})` : ''}</div>
-      ${gradeRows}
-      ${gradeData?.gpa !== undefined ? `<div class="coursemate-grade-gpa">Avg GPA: ${gradeData.gpa.toFixed(2)}</div>` : ''}
-      ${gradeData?.partial ? '<div class="coursemate-grade-gpa">Partial data (timed out)</div>' : ''}
-    </div>
-    <div class="coursemate-tooltip-section">
       <div class="coursemate-tooltip-section-title">Recent Reviews</div>
       ${reviewsHtml}
     </div>
     <div class="coursemate-tooltip-footer">
       ${rmpUrl ? `<a class="coursemate-tooltip-link" href="${rmpUrl}" target="_blank" rel="noreferrer">View on RMP -></a>` : '<span></span>'}
-      ${cougarGradesUrl ? `<a class="coursemate-tooltip-link" href="${cougarGradesUrl}" target="_blank" rel="noreferrer">CougarGrades -></a>` : '<span></span>'}
     </div>
   `;
 
