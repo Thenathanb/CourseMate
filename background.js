@@ -21,7 +21,7 @@ function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
 // Cache configuration
 const CACHE_CONFIG = {
   defaultTTL: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
-  prefix: 'courseMate_'
+  prefix: 'courseMate_v2_'
 };
 
 /**
