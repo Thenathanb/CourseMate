@@ -3,15 +3,13 @@
   "name": "CourseMate",
   "short_name": "CourseMate",
   "version": "1.0.0",
-  "description": "Displays RateMyProfessors ratings and CougarGrades data on course registration pages. Supports University of Houston, University of North Texas, UTSA, UT Austin, UT Dallas, Texas A&M, Texas State, Texas Tech, and Texas Southern University.",
+  "description": "Displays RateMyProfessors ratings on course registration pages for University of Texas at San Antonio students.",
   "permissions": [
     "storage"
   ],
   "host_permissions": [
-    "https://*.uh.edu/*",
-    "https://www.ratemyprofessors.com/*",
-    "https://cougargrades.io/*",
-    "https://unpkg.com/*"
+    "https://*.utsa.edu/*",
+    "https://www.ratemyprofessors.com/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -19,10 +17,14 @@
   "content_scripts": [
     {
       "matches": [
-        "https://*.uh.edu/*"
+        "https://*.utsa.edu/*"
       ],
-      "js": ["contentScript.js"],
-      "css": ["ui.css"],
+      "js": [
+        "contentScript.js"
+      ],
+      "css": [
+        "ui.css"
+      ],
       "run_at": "document_idle"
     }
   ],
