@@ -15,8 +15,9 @@ const SELECTORS = {
     // PeopleSoft (UH, UNT, UT Austin, UTD)
     'span.ps_box-value[id*="SSR_INSTR_LONG"]',
 
-    // Ellucian Banner Self-Service (UTSA)
+    // Ellucian Banner Self-Service (UTSA) — class name and href-based selectors
     'td[data-property="instructor"] a.email',
+    'td[data-property="instructor"] a[href^="mailto:"]',
 
     // Generic fallbacks
     '.instructor-name',
@@ -630,7 +631,6 @@ function initMutationObserver() {
 
     for (const mutation of mutations) {
       if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
-        // Check if any added nodes might contain instructor info
         for (const node of mutation.addedNodes) {
           if (node.nodeType === Node.ELEMENT_NODE) {
             shouldScan = true;
@@ -638,23 +638,43 @@ function initMutationObserver() {
           }
         }
       }
+      // Banner SSB reveals results by removing display:none — catch style/class changes
+      if (mutation.type === 'attributes') {
+        const el = mutation.target;
+        if (el.nodeType === Node.ELEMENT_NODE &&
+            (el.tagName === 'TR' || el.tagName === 'TD' || el.tagName === 'TBODY')) {
+          shouldScan = true;
+        }
+      }
+      if (shouldScan) break;
     }
 
     if (shouldScan) {
-      console.log('[CourseMate] DOM changed, re-scanning...');
-      // Debounce scanning
       clearTimeout(window.courseMateScanTimeout);
-      window.courseMateScanTimeout = setTimeout(scanPage, 500);
+      window.courseMateScanTimeout = setTimeout(scanPage, 800);
     }
   });
 
-  // Observe the entire document body
   observer.observe(document.body, {
     childList: true,
-    subtree: true
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['style', 'class']
   });
 
   console.log('[CourseMate] MutationObserver initialized');
+}
+
+// Banner SSB fires search results after a button click — listen for it as a fallback
+function initBannerSsbSearchListener() {
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('button, input[type="submit"], a[id*="search"], a[class*="search"]');
+    if (btn) {
+      // Wait for Banner SSB to finish rendering results (AJAX + render time)
+      setTimeout(scanPage, 1500);
+      setTimeout(scanPage, 3000);
+    }
+  }, true);
 }
 
 /**
@@ -674,6 +694,9 @@ function init() {
 
   // Watch for dynamic changes
   initMutationObserver();
+
+  // Extra fallback for Banner SSB (Ellucian) search results
+  initBannerSsbSearchListener();
 
   // Re-scan when page visibility changes (in case content loaded while tab was hidden)
   document.addEventListener('visibilitychange', () => {
