@@ -96,7 +96,7 @@ const MockProvider = {
  * Real RMP Provider using GraphQL API
  */
 const RMPProvider = {
-  UH_SCHOOL_ID: "U2Nob29sLTExMDk=", // University of Houston (Main Campus - Houston, TX)
+  SCHOOL_ID: "U2Nob29sLTEyNTI=", // University of North Texas
 
   async search(lastName, firstName) {
     const url = 'https://www.ratemyprofessors.com/graphql';
@@ -134,13 +134,13 @@ const RMPProvider = {
     const variables = {
       query: {
         text: lastName,
-        schoolID: this.UH_SCHOOL_ID
+        schoolID: this.SCHOOL_ID
       },
       count: 10
     };
 
     try {
-      if (!PRODUCTION_MODE) console.log(`[RMP API] Searching for: ${lastName}, ${firstName} at school ${this.UH_SCHOOL_ID}`);
+      if (!PRODUCTION_MODE) console.log(`[RMP API] Searching for: ${lastName}, ${firstName} at school ${this.SCHOOL_ID}`);
       const response = await fetchWithTimeout(url, {
         method: 'POST',
         headers: headers,
@@ -157,22 +157,22 @@ const RMPProvider = {
         return { found: false, message: 'No RMP results found' };
       }
 
-      // Filter to only UH professors
-      const uhProfessors = edges.filter(edge => {
+      // Filter to only UNT professors
+      const schoolProfessors = edges.filter(edge => {
         const schoolName = edge.node.school?.name || '';
-        const isUH = schoolName.toLowerCase().includes('university of houston');
-        if (!PRODUCTION_MODE) console.log(`[RMP API] Checking: ${edge.node.firstName} ${edge.node.lastName} at ${schoolName} - UH: ${isUH}`);
-        return isUH;
+        const isMatch = schoolName.toLowerCase().includes('university of north texas');
+        if (!PRODUCTION_MODE) console.log(`[RMP API] Checking: ${edge.node.firstName} ${edge.node.lastName} at ${schoolName} - Match: ${isMatch}`);
+        return isMatch;
       });
 
-      if (!PRODUCTION_MODE) console.log(`[RMP API] Found ${uhProfessors.length} UH professors out of ${edges.length} total results`);
+      if (!PRODUCTION_MODE) console.log(`[RMP API] Found ${schoolProfessors.length} UNT professors out of ${edges.length} total results`);
 
-      if (uhProfessors.length === 0) {
-        return { found: false, message: 'No UH professors found in results' };
+      if (schoolProfessors.length === 0) {
+        return { found: false, message: 'No UNT professors found in results' };
       }
 
-      // Try exact match first (in UH professors only)
-      for (const edge of uhProfessors) {
+      // Try exact match first (in UNT professors only)
+      for (const edge of schoolProfessors) {
         const prof = edge.node;
         if (prof.firstName.toLowerCase() === firstName.toLowerCase() &&
             prof.lastName.toLowerCase() === lastName.toLowerCase()) {
@@ -192,8 +192,8 @@ const RMPProvider = {
         }
       }
 
-      // Use best match if last name matches (in UH professors only)
-      const bestMatch = uhProfessors[0].node;
+      // Use best match if last name matches (in UNT professors only)
+      const bestMatch = schoolProfessors[0].node;
       if (bestMatch.lastName.toLowerCase() === lastName.toLowerCase()) {
         if (!PRODUCTION_MODE) console.log(`[RMP API] Using best match: ${bestMatch.firstName} ${bestMatch.lastName}`);
         return {
@@ -222,415 +222,10 @@ const RMPProvider = {
 // Active provider - switch between MockProvider and real provider
 const DataProvider = RMPProvider; // Using real RMP API now!
 
-const COUGARGRADES_CONFIG = {
-  dataBaseUrl: 'https://unpkg.com/@cougargrades/publicdata@latest/bundle/edu.uh.grade_distribution',
-  instructorsUrl: 'https://unpkg.com/@cougargrades/publicdata@latest/bundle/io.cougargrades.searchable/instructors.json',
-  splitFiles: Array.from({ length: 13 }, (_, index) => `records_split_${index}.csv`),
-  cachePrefix: 'courseMateGrades_',
-  defaultTTL: 14 * 24 * 60 * 60 * 1000,
-  requestTimeoutMs: 8000,
-  maxDurationMs: 10000
-};
-
-let cougarGradesInstructorIndex = null;
-
 function normalizeNamePart(value) {
   return (value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
-function parseCsvLine(line) {
-  const fields = [];
-  let current = '';
-  let inQuotes = false;
-
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
-    if (char === '"') {
-      const next = line[i + 1];
-      if (inQuotes && next === '"') {
-        current += '"';
-        i += 1;
-      } else {
-        inQuotes = !inQuotes;
-      }
-      continue;
-    }
-
-    if (char === ',' && !inQuotes) {
-      fields.push(current);
-      current = '';
-      continue;
-    }
-
-    current += char;
-  }
-
-  fields.push(current);
-  return fields;
-}
-
-function namesMatch(recordFirst, recordLast, targetFirst, targetLast) {
-  const recordLastNormalized = normalizeNamePart(recordLast);
-  const targetLastNormalized = normalizeNamePart(targetLast);
-  if (recordLastNormalized !== targetLastNormalized) {
-    return false;
-  }
-
-  const recordFirstNormalized = normalizeNamePart(recordFirst);
-  const targetFirstNormalized = normalizeNamePart(targetFirst);
-  if (!recordFirstNormalized || !targetFirstNormalized) {
-    return false;
-  }
-
-  return recordFirstNormalized.startsWith(targetFirstNormalized) ||
-    targetFirstNormalized.startsWith(recordFirstNormalized);
-}
-
-function matchSubjectValue(value, subjectUpper) {
-  if (!value || !subjectUpper) {
-    return false;
-  }
-
-  const text = String(value).toUpperCase();
-  if (text === subjectUpper) {
-    return true;
-  }
-  if (text.startsWith(subjectUpper)) {
-    return true;
-  }
-  return text.includes(` ${subjectUpper}`) || text.includes(`${subjectUpper} `) ||
-    text.includes(`${subjectUpper}-`) || text.includes(`${subjectUpper}/`) ||
-    text.includes(`${subjectUpper},`);
-}
-
-function entryMatchesSubject(entry, subject) {
-  if (!entry || !subject) {
-    return false;
-  }
-
-  const subjectUpper = subject.toUpperCase();
-  const keysToCheck = [
-    'subject',
-    'subjects',
-    'department',
-    'departments',
-    'dept',
-    'deptCode',
-    'deptAbbr',
-    'abbreviation',
-    'abbr',
-    'code',
-    'name'
-  ];
-
-  for (const key of keysToCheck) {
-    const value = entry[key];
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        if (matchSubjectValue(item, subjectUpper)) {
-          return true;
-        }
-        if (item && typeof item === 'object') {
-          for (const innerValue of Object.values(item)) {
-            if (matchSubjectValue(innerValue, subjectUpper)) {
-              return true;
-            }
-          }
-        }
-      }
-      continue;
-    }
-
-    if (value && typeof value === 'object') {
-      for (const innerValue of Object.values(value)) {
-        if (matchSubjectValue(innerValue, subjectUpper)) {
-          return true;
-        }
-      }
-      continue;
-    }
-
-    if (matchSubjectValue(value, subjectUpper)) {
-      return true;
-    }
-  }
-
-  if (matchSubjectValue(entry.href, subjectUpper)) {
-    return true;
-  }
-
-  return false;
-}
-
-function pickCougarGradesMatch(candidates, firstKey, lastKey, courseInfo, middleInitial) {
-  if (!candidates.length) {
-    return null;
-  }
-
-  const middleKey = normalizeNamePart(middleInitial);
-  const preferredFirstKey = middleKey ? `${firstKey}${middleKey}` : null;
-
-  if (preferredFirstKey) {
-    const preferredMatches = candidates.filter(entry => {
-      const entryFirst = normalizeNamePart(entry.firstName);
-      return entryFirst && entryFirst.startsWith(preferredFirstKey);
-    });
-
-    if (preferredMatches.length === 1) {
-      return preferredMatches[0];
-    }
-
-    if (courseInfo?.subject && preferredMatches.length > 1) {
-      const filtered = preferredMatches.filter(entry => entryMatchesSubject(entry, courseInfo.subject));
-      if (filtered.length === 1) {
-        return filtered[0];
-      }
-    }
-  }
-
-  const exactMatches = candidates.filter(entry => {
-    const entryFirst = normalizeNamePart(entry.firstName);
-    const entryLast = normalizeNamePart(entry.lastName);
-    return entryFirst === firstKey && entryLast === lastKey;
-  });
-
-  if (exactMatches.length === 1) {
-    return exactMatches[0];
-  }
-
-  if (courseInfo?.subject && exactMatches.length > 1) {
-    const filtered = exactMatches.filter(entry => entryMatchesSubject(entry, courseInfo.subject));
-    if (filtered.length === 1) {
-      return filtered[0];
-    }
-  }
-
-  const prefixMatches = candidates.filter(entry => {
-    const entryFirst = normalizeNamePart(entry.firstName);
-    if (!entryFirst) {
-      return false;
-    }
-    return entryFirst.startsWith(firstKey) || firstKey.startsWith(entryFirst);
-  });
-
-  if (prefixMatches.length === 1) {
-    return prefixMatches[0];
-  }
-
-  if (courseInfo?.subject && prefixMatches.length > 1) {
-    const filtered = prefixMatches.filter(entry => entryMatchesSubject(entry, courseInfo.subject));
-    if (filtered.length === 1) {
-      return filtered[0];
-    }
-  }
-
-  return null;
-}
-
-async function loadCougarGradesInstructorIndex() {
-  if (cougarGradesInstructorIndex) {
-    return cougarGradesInstructorIndex;
-  }
-
-  const response = await fetchWithTimeout(
-    COUGARGRADES_CONFIG.instructorsUrl,
-    {},
-    COUGARGRADES_CONFIG.requestTimeoutMs
-  );
-  if (!response.ok) {
-    throw new Error('CougarGrades instructor index unavailable');
-  }
-
-  const payload = await response.json();
-  const index = new Map();
-  for (const entry of payload?.data || []) {
-    const lastKey = normalizeNamePart(entry.lastName);
-    if (!index.has(lastKey)) {
-      index.set(lastKey, []);
-    }
-    index.get(lastKey).push(entry);
-  }
-
-  cougarGradesInstructorIndex = index;
-  return cougarGradesInstructorIndex;
-}
-
-async function getCougarGradesUrl(firstName, lastName, courseInfo, middleInitial) {
-  try {
-    if (!firstName || !lastName) {
-      return null;
-    }
-    const index = await loadCougarGradesInstructorIndex();
-    const lastKey = normalizeNamePart(lastName);
-    const firstKey = normalizeNamePart(firstName);
-    const candidates = index.get(lastKey) || [];
-    const match = pickCougarGradesMatch(candidates, firstKey, lastKey, courseInfo, middleInitial);
-    const fallback = !match && candidates.length === 1 ? candidates[0] : null;
-    if (match?.href) {
-      return `https://cougargrades.io${match.href}`;
-    }
-    if (fallback?.href) {
-      return `https://cougargrades.io${fallback.href}`;
-    }
-  } catch (error) {
-    console.warn('[CourseMate] CougarGrades instructor lookup failed:', error);
-  }
-  return null;
-}
-
-async function getCougarGradesFromCache(cacheKey) {
-  try {
-    const result = await chrome.storage.local.get([cacheKey, 'cacheTTL']);
-    const cacheTTL = result.cacheTTL || COUGARGRADES_CONFIG.defaultTTL;
-
-    if (result[cacheKey]) {
-      const cached = result[cacheKey];
-      const age = Date.now() - cached.timestamp;
-      if (age < cacheTTL) {
-        return cached.data;
-      }
-    }
-  } catch (error) {
-    console.warn('[CourseMate] CougarGrades cache read failed:', error);
-  }
-  return null;
-}
-
-async function saveCougarGradesToCache(cacheKey, data) {
-  try {
-    const cacheEntry = {
-      timestamp: Date.now(),
-      data: data
-    };
-    await chrome.storage.local.set({ [cacheKey]: cacheEntry });
-  } catch (error) {
-    console.warn('[CourseMate] CougarGrades cache write failed:', error);
-  }
-}
-
-async function fetchCougarGradesDistribution({ firstName, lastName, courseInfo }) {
-  if (!courseInfo?.subject || !courseInfo?.catalog) {
-    return null;
-  }
-
-  const subject = courseInfo.subject.toUpperCase();
-  const catalog = courseInfo.catalog;
-  const cacheKey = `${COUGARGRADES_CONFIG.cachePrefix}${normalizeNamePart(lastName)}_${normalizeNamePart(firstName)}_${subject}_${catalog}`;
-  const cached = await getCougarGradesFromCache(cacheKey);
-  if (cached) {
-    return cached;
-  }
-
-  const totals = { A: 0, B: 0, C: 0, D: 0, F: 0 };
-  let weightedGpaTotal = 0;
-  let weightedGpaCount = 0;
-  const startTime = Date.now();
-
-  for (const fileName of COUGARGRADES_CONFIG.splitFiles) {
-    if (Date.now() - startTime > COUGARGRADES_CONFIG.maxDurationMs) {
-      break;
-    }
-
-    const response = await fetchWithTimeout(
-      `${COUGARGRADES_CONFIG.dataBaseUrl}/${fileName}`,
-      {},
-      COUGARGRADES_CONFIG.requestTimeoutMs
-    );
-    if (!response.ok) {
-      continue;
-    }
-
-    const text = await response.text();
-    const lines = text.split('\n').filter(Boolean);
-    if (lines.length < 2) {
-      continue;
-    }
-
-    const header = parseCsvLine(lines[0].replace(/\r$/, ''));
-    const index = {
-      subject: header.indexOf('SUBJECT'),
-      catalog: header.indexOf('CATALOG NBR'),
-      instructorLast: header.indexOf('INSTR LAST NAME'),
-      instructorFirst: header.indexOf('INSTR FIRST NAME'),
-      a: header.indexOf('A'),
-      b: header.indexOf('B'),
-      c: header.indexOf('C'),
-      d: header.indexOf('D'),
-      f: header.indexOf('F'),
-      avgGpa: header.indexOf('AVG GPA')
-    };
-
-    for (let i = 1; i < lines.length; i++) {
-      const row = parseCsvLine(lines[i].replace(/\r$/, ''));
-      if (!row[index.subject] || !row[index.catalog]) {
-        continue;
-      }
-
-      if (row[index.subject].toUpperCase() !== subject) {
-        continue;
-      }
-      if (row[index.catalog] !== catalog) {
-        continue;
-      }
-
-      if (!namesMatch(row[index.instructorFirst], row[index.instructorLast], firstName, lastName)) {
-        continue;
-      }
-
-      const a = parseInt(row[index.a] || '0', 10);
-      const b = parseInt(row[index.b] || '0', 10);
-      const c = parseInt(row[index.c] || '0', 10);
-      const d = parseInt(row[index.d] || '0', 10);
-      const f = parseInt(row[index.f] || '0', 10);
-      const rowTotal = a + b + c + d + f;
-
-      totals.A += a;
-      totals.B += b;
-      totals.C += c;
-      totals.D += d;
-      totals.F += f;
-
-      const gpa = parseFloat(row[index.avgGpa] || '0');
-      if (!Number.isNaN(gpa) && rowTotal > 0) {
-        weightedGpaTotal += gpa * rowTotal;
-        weightedGpaCount += rowTotal;
-      }
-    }
-  }
-
-  const totalGrades = totals.A + totals.B + totals.C + totals.D + totals.F;
-  if (!totalGrades) {
-    const emptyDistribution = {
-      course: `${subject} ${catalog}`,
-      totals,
-      percentages: null,
-      gpa: undefined,
-      notFound: true,
-      partial: Date.now() - startTime > COUGARGRADES_CONFIG.maxDurationMs
-    };
-    await saveCougarGradesToCache(cacheKey, emptyDistribution);
-    return emptyDistribution;
-  }
-
-  const percentages = {
-    A: Math.round((totals.A / totalGrades) * 100),
-    B: Math.round((totals.B / totalGrades) * 100),
-    C: Math.round((totals.C / totalGrades) * 100),
-    D: Math.round((totals.D / totalGrades) * 100),
-    F: Math.round((totals.F / totalGrades) * 100)
-  };
-
-  const distribution = {
-    course: `${subject} ${catalog}`,
-    totals,
-    percentages,
-    gpa: weightedGpaCount ? weightedGpaTotal / weightedGpaCount : undefined,
-    partial: Date.now() - startTime > COUGARGRADES_CONFIG.maxDurationMs
-  };
-
-  await saveCougarGradesToCache(cacheKey, distribution);
-  return distribution;
-}
 
 /**
  * Normalize professor name for cache keys and searches
@@ -920,21 +515,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         const { professorName, teacherId, courseInfo } = request || {};
         const { firstName, lastName, middleInitial } = parseProfessorName(professorName || '');
 
-        const results = await Promise.allSettled([
-          fetchRMPReviewsById(teacherId, 3),
-          fetchCougarGradesDistribution({ firstName, lastName, courseInfo }),
-          getCougarGradesUrl(firstName, lastName, courseInfo, middleInitial)
-        ]);
+        const reviews = await fetchRMPReviewsById(teacherId, 3).catch(() => []);
 
-        const reviews = results[0].status === 'fulfilled' ? results[0].value : [];
-        const gradeDistribution = results[1].status === 'fulfilled' ? results[1].value : null;
-        const cougarGradesUrl = results[2].status === 'fulfilled' ? results[2].value : null;
-
-        sendResponse({
-          reviews,
-          gradeDistribution,
-          cougarGradesUrl
-        });
+        sendResponse({ reviews });
       } catch (error) {
         console.error('[Background] Hover data error:', error);
         sendResponse({ error: error.message });
