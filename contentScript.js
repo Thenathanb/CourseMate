@@ -526,14 +526,25 @@ function createErrorBadge(message) {
  * Insert badge next to professor name
  */
 function insertBadge(element, badge) {
-  // Check if badge already exists
+  // For anchor tags (Banner SSB mailto links), insert after the element
+  // as a sibling so the badge sits beside the name, not inside the link.
+  if (element.tagName === 'A') {
+    const existingBadge = element.nextElementSibling;
+    if (existingBadge && existingBadge.classList.contains('coursemate-badge')) {
+      activeBadges.delete(existingBadge);
+      existingBadge.replaceWith(badge);
+    } else {
+      element.insertAdjacentElement('afterend', badge);
+    }
+    return;
+  }
+
+  // For span/other elements (PeopleSoft), append inside the element
   const existingBadge = element.querySelector('.coursemate-badge');
   if (existingBadge) {
     activeBadges.delete(existingBadge);
     existingBadge.replaceWith(badge);
   } else {
-    // Insert badge after the text content
-    element.style.position = 'relative';
     element.appendChild(document.createTextNode(' '));
     element.appendChild(badge);
   }
