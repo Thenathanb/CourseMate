@@ -12,21 +12,19 @@ const SELECTORS = {
   // - Elements within course listings
 
   instructorElements: [
-    // UH-specific selectors (PeopleSoft system)
-    'span.ps_box-value[id*="SSR_INSTR_LONG"]',  // Most specific - targets instructor fields
+    // PeopleSoft (UH, UNT, UT Austin, UTD)
+    'span.ps_box-value[id*="SSR_INSTR_LONG"]',
 
-    // Generic selectors (fallback for other pages)
-    '.instructor-name',          // Class-based selector
+    // Ellucian Banner Self-Service (UTSA)
+    'td[data-property="instructor"] a.email',
+
+    // Generic fallbacks
+    '.instructor-name',
     '.faculty-name',
-    '[data-instructor]',         // Data attribute selector
-    'td.instructor',             // Table cell with class
+    '[data-instructor]',
+    'td.instructor',
     '.course-instructor',
-    'span[title*="Instructor"]', // Attribute contains
-
-    // Generic fallback (be careful with these - they may match too much)
-    // Uncomment and test carefully:
-    // 'td:nth-child(4)',        // If instructors are always in 4th column
-    // '.schedule-row .instructor'
+    'span[title*="Instructor"]',
   ],
 
   // Elements to exclude (navigation, headers, etc.)
@@ -93,25 +91,28 @@ function extractProfessorName(element) {
  * Try to find a course code near the instructor element
  */
 function findCourseInfo(element) {
-  const coursePattern = /\b([A-Z]{2,4})\s*([0-9]{4})\b/;
   const container = element.closest('tr') || element.closest('[role="row"]') || element.parentElement;
+  if (!container) return null;
 
-  if (!container) {
-    return null;
+  // Banner SSB: subject and course number are in dedicated data-property cells
+  const subjectCell = container.querySelector('td[data-property="subject"]');
+  const courseNumberCell = container.querySelector('td[data-property="courseNumber"]');
+  if (subjectCell && courseNumberCell) {
+    const subject = (subjectCell.getAttribute('title') || subjectCell.textContent).trim().toUpperCase();
+    const catalog = (courseNumberCell.getAttribute('title') || courseNumberCell.textContent).trim();
+    if (subject && catalog) {
+      return { subject, catalog, display: `${subject} ${catalog}` };
+    }
   }
 
+  // PeopleSoft: scan row text for a course code pattern
+  const coursePattern = /\b([A-Z]{2,4})\s*([0-9]{4})\b/;
   const match = container.textContent.match(coursePattern);
-  if (!match) {
-    return null;
-  }
+  if (!match) return null;
 
   const subject = match[1].toUpperCase();
   const catalog = match[2];
-  return {
-    subject,
-    catalog,
-    display: `${subject} ${catalog}`
-  };
+  return { subject, catalog, display: `${subject} ${catalog}` };
 }
 
 function findSectionContainer(element) {
@@ -130,11 +131,17 @@ function findSectionContainer(element) {
 }
 
 function isLabSection(element) {
-  const container = findSectionContainer(element);
-  if (!container) {
-    return false;
+  // Banner SSB: check the explicit scheduleType cell
+  const row = element.closest('tr');
+  const scheduleTypeCell = row && row.querySelector('td[data-property="scheduleType"]');
+  if (scheduleTypeCell) {
+    const type = (scheduleTypeCell.getAttribute('title') || scheduleTypeCell.textContent).toUpperCase();
+    return /\bLAB\b|\bLABORATORY\b/.test(type) && !/\bLECTURE\b/.test(type);
   }
 
+  // PeopleSoft: scan section container text
+  const container = findSectionContainer(element);
+  if (!container) return false;
   const text = container.textContent.toUpperCase();
   const hasLab = /\bLAB\b|\bLABORATORY\b/.test(text);
   const hasLecture = /\bLEC\b|\bLECTURE\b/.test(text);
