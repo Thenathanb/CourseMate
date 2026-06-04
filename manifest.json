@@ -3,7 +3,7 @@
   "name": "CourseMate",
   "short_name": "CourseMate",
   "version": "1.0.0",
-  "description": "Displays RateMyProfessors ratings and CougarGrades data on University of Houston course pages",
+  "description": "Displays RateMyProfessors ratings and CougarGrades data on course registration pages. Supports University of Houston, University of North Texas, UTSA, UT Austin, UT Dallas, Texas A&M, Texas State, Texas Tech, and Texas Southern University.",
   "permissions": [
     "storage"
   ],
