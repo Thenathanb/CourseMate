@@ -580,6 +580,29 @@ function insertBadge(element, badge) {
   }
 }
 
+// Returns the .results-linked div in the linked column of the same Banner SSB row,
+// or null if the element is not in a Banner SSB row.
+function getBannerLinkedDiv(element) {
+  const row = element.closest('tr[data-id]');
+  if (!row) return null;
+  const linkedCell = row.querySelector('td[data-property="linked"]');
+  if (!linkedCell) return null;
+  return linkedCell.querySelector('.results-linked') || linkedCell;
+}
+
+// Insert a badge into the Banner SSB linked cell, replacing any prior badge there.
+function insertLinkedBadge(linkedDiv, badge) {
+  if (!linkedDiv) return;
+  const existing = linkedDiv.querySelector('.coursemate-badge');
+  if (existing) {
+    activeBadges.delete(existing);
+    existing.replaceWith(badge);
+  } else {
+    linkedDiv.innerHTML = '';
+    linkedDiv.appendChild(badge);
+  }
+}
+
 /**
  * Process a single professor name element
  */
@@ -607,12 +630,14 @@ async function processProfessorElement(element) {
     console.log(`[CourseMate] Matched course: ${courseInfo.display}`);
   }
 
-  // Insert loading badge
+  const linkedDiv = getBannerLinkedDiv(element);
+
+  // Insert loading badge in the instructor cell and linked column
   const loadingBadge = createLoadingBadge();
   insertBadge(element, loadingBadge);
+  insertLinkedBadge(linkedDiv, createLoadingBadge());
 
   try {
-    // Request data from background script
     const response = await chrome.runtime.sendMessage({
       action: 'getProfessorData',
       professorName: professorName,
@@ -625,21 +650,31 @@ async function processProfessorElement(element) {
     if (response.error) {
       finalBadge = createErrorBadge(response.error);
     } else if (response.found && response.data) {
-      finalBadge = createRatingBadge(response.data, {
-        professorName,
-        courseInfo
-      });
+      finalBadge = createRatingBadge(response.data, { professorName, courseInfo });
     } else {
       finalBadge = createNotFoundBadge(professorName);
     }
 
-    // Replace loading badge with final badge
     insertBadge(element, finalBadge);
+
+    // Also show badge in the linked column (Banner SSB) for easy access
+    if (linkedDiv) {
+      let linkedBadge;
+      if (response.error) {
+        linkedBadge = createErrorBadge(response.error);
+      } else if (response.found && response.data) {
+        linkedBadge = createRatingBadge(response.data, { professorName, courseInfo });
+      } else {
+        linkedBadge = createNotFoundBadge(professorName);
+      }
+      insertLinkedBadge(linkedDiv, linkedBadge);
+    }
 
   } catch (error) {
     console.error('[CourseMate] Error processing professor:', error);
     const errorBadge = createErrorBadge(error.message);
     insertBadge(element, errorBadge);
+    insertLinkedBadge(linkedDiv, createErrorBadge(error.message));
   }
 }
 
