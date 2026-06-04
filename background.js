@@ -92,13 +92,27 @@ const MockProvider = {
   }
 };
 
+const SCHOOL_CONFIGS = {
+  'uh.edu':       { schoolId: 'U2Nob29sLTExMDk=',  filter: 'university of houston' },
+  'unt.edu':      { schoolId: 'U2Nob29sLTEyNTI=',  filter: 'university of north texas' },
+  'utsa.edu':     { schoolId: 'U2Nob29sLTE1MTY=',  filter: 'university of texas at san antonio' },
+  'utexas.edu':   { schoolId: 'U2Nob29sLTEyNTU=',  filter: 'university of texas at austin' },
+  'utdallas.edu': { schoolId: 'U2Nob29sLTEyNzM=',  filter: 'university of texas at dallas' },
+};
+
+function getSchoolConfig(hostname) {
+  for (const [domain, config] of Object.entries(SCHOOL_CONFIGS)) {
+    if (hostname && hostname.endsWith(domain)) return config;
+  }
+  return SCHOOL_CONFIGS['uh.edu']; // fallback
+}
+
 /**
  * Real RMP Provider using GraphQL API
  */
 const RMPProvider = {
-  UH_SCHOOL_ID: "U2Nob29sLTExMDk=", // University of Houston (Main Campus - Houston, TX)
-
-  async search(lastName, firstName) {
+  async search(lastName, firstName, hostname) {
+    const { schoolId, filter } = getSchoolConfig(hostname);
     const url = 'https://www.ratemyprofessors.com/graphql';
 
     const headers = {
@@ -134,13 +148,13 @@ const RMPProvider = {
     const variables = {
       query: {
         text: lastName,
-        schoolID: this.UH_SCHOOL_ID
+        schoolID: schoolId
       },
       count: 10
     };
 
     try {
-      if (!PRODUCTION_MODE) console.log(`[RMP API] Searching for: ${lastName}, ${firstName} at school ${this.UH_SCHOOL_ID}`);
+      if (!PRODUCTION_MODE) console.log(`[RMP API] Searching for: ${lastName}, ${firstName} at school ${schoolId}`);
       const response = await fetchWithTimeout(url, {
         method: 'POST',
         headers: headers,
@@ -157,21 +171,21 @@ const RMPProvider = {
         return { found: false, message: 'No RMP results found' };
       }
 
-      // Filter to only UH professors
+      // Filter to professors at the detected school
       const uhProfessors = edges.filter(edge => {
         const schoolName = edge.node.school?.name || '';
-        const isUH = schoolName.toLowerCase().includes('university of houston');
-        if (!PRODUCTION_MODE) console.log(`[RMP API] Checking: ${edge.node.firstName} ${edge.node.lastName} at ${schoolName} - UH: ${isUH}`);
-        return isUH;
+        const isMatch = schoolName.toLowerCase().includes(filter);
+        if (!PRODUCTION_MODE) console.log(`[RMP API] Checking: ${edge.node.firstName} ${edge.node.lastName} at ${schoolName} - Match: ${isMatch}`);
+        return isMatch;
       });
 
-      if (!PRODUCTION_MODE) console.log(`[RMP API] Found ${uhProfessors.length} UH professors out of ${edges.length} total results`);
+      if (!PRODUCTION_MODE) console.log(`[RMP API] Found ${uhProfessors.length} professors out of ${edges.length} total results`);
 
       if (uhProfessors.length === 0) {
-        return { found: false, message: 'No UH professors found in results' };
+        return { found: false, message: 'No professors found at this school in results' };
       }
 
-      // Try exact match first (in UH professors only)
+      // Try exact match first
       for (const edge of uhProfessors) {
         const prof = edge.node;
         if (prof.firstName.toLowerCase() === firstName.toLowerCase() &&
@@ -192,7 +206,7 @@ const RMPProvider = {
         }
       }
 
-      // Use best match if last name matches (in UH professors only)
+      // Use best match if last name matches
       const bestMatch = uhProfessors[0].node;
       if (bestMatch.lastName.toLowerCase() === lastName.toLowerCase()) {
         if (!PRODUCTION_MODE) console.log(`[RMP API] Using best match: ${bestMatch.firstName} ${bestMatch.lastName}`);
@@ -787,7 +801,7 @@ function parseProfessorName(fullName) {
 /**
  * Fetch professor data (with caching and rate limiting)
  */
-async function fetchProfessorData(professorName, school = 'University of Houston') {
+async function fetchProfessorData(professorName, school = 'uh.edu') {
   try {
     const { firstName, lastName } = parseProfessorName(professorName);
 
@@ -817,7 +831,7 @@ async function fetchProfessorData(professorName, school = 'University of Houston
 
     // Fetch from provider (pass firstName and lastName)
     await logDebug(`Fetching from RMP API: ${lastName}, ${firstName}`);
-    const result = await DataProvider.search(lastName, firstName);
+    const result = await DataProvider.search(lastName, firstName, school);
 
     // Cache the result (even if not found, to prevent repeated lookups)
     await saveToCache(cacheKey, result);
