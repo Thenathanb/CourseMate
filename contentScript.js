@@ -533,7 +533,8 @@ async function processProfessorElement(element) {
     const response = await chrome.runtime.sendMessage({
       action: 'getProfessorData',
       professorName: professorName,
-      school: window.location.hostname
+      school: window.location.hostname,
+      courseInfo: courseInfo
     });
 
     let finalBadge;

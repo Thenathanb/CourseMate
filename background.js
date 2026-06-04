@@ -21,7 +21,7 @@ function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
 // Cache configuration
 const CACHE_CONFIG = {
   defaultTTL: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
-  prefix: 'courseMate_v2_'
+  prefix: 'courseMate_v3_'
 };
 
 /**
@@ -157,42 +157,116 @@ const RMPProvider = {
     return edges.filter(edge => (edge.node.school?.name || '').toLowerCase().includes(filter));
   },
 
-  _findMatch(professors, expectedFirst, expectedLast) {
-    // Exact first + last match
+  // Score how well a professor's RMP department matches the course subject code.
+  _deptScore(department, subject) {
+    if (!department || !subject) return 0;
+    const dept = department.toLowerCase();
+    const subj = subject.toLowerCase();
+    if (dept.includes(subj)) return 3;
+    const map = {
+      math: ['math', 'calcul', 'algebra', 'statist', 'quantit'],
+      cosc: ['computer', 'comput', 'software', 'inform tech', 'data sci'],
+      csce: ['computer', 'comput', 'software'],
+      hist: ['histor'],
+      engl: ['english', 'literatur', 'writing', 'rhetoric', 'composition'],
+      biol: ['biolog'],
+      chem: ['chemi'],
+      phys: ['physic'],
+      psyc: ['psycholog'],
+      econ: ['econom'],
+      acct: ['account'],
+      mgmt: ['manag', 'business admin'],
+      mktg: ['market'],
+      phil: ['philosoph'],
+      soci: ['sociolog'],
+      pols: ['politic', 'government', 'public admin'],
+      comm: ['communicat', 'journalism', 'media'],
+      arts: ['fine art', 'studio art', 'visual art'],
+      musc: ['music'],
+      kine: ['kinesiol', 'physical edu', 'exercise sci', 'sport'],
+      educ: ['educat'],
+      nurs: ['nurs'],
+      mece: ['mechanical eng', 'mechanic'],
+      cive: ['civil eng'],
+      geog: ['geograph'],
+      anth: ['anthropolog'],
+      fina: ['financ'],
+      span: ['spanish', 'hispanic'],
+      fren: ['french'],
+      germ: ['german'],
+    };
+    const keywords = map[subj] || [];
+    if (keywords.some(k => dept.includes(k))) return 2;
+    return 0;
+  },
+
+  _findMatch(professors, expectedFirst, expectedLast, courseInfo) {
+    const expFirst = expectedFirst.toLowerCase();
+    const expLast = expectedLast.toLowerCase();
+    const subject = courseInfo?.subject;
+
+    // 1. Exact first + last name match
     for (const edge of professors) {
       const prof = edge.node;
-      if (prof.firstName.toLowerCase() === expectedFirst.toLowerCase() &&
-          prof.lastName.toLowerCase() === expectedLast.toLowerCase()) {
+      if (prof.firstName.toLowerCase() === expFirst &&
+          prof.lastName.toLowerCase() === expLast) {
         return { found: true, data: this._buildData(prof) };
       }
     }
-    // Best match: last name alone matches
-    const best = professors[0]?.node;
-    if (best?.lastName.toLowerCase() === expectedLast.toLowerCase()) {
-      return { found: true, data: this._buildData(best) };
+
+    // Narrow to professors whose last name matches
+    const lastMatches = professors.filter(edge =>
+      edge.node.lastName.toLowerCase() === expLast
+    );
+
+    if (lastMatches.length === 0) return null;
+
+    // Only one candidate — return without further checks
+    if (lastMatches.length === 1) {
+      return { found: true, data: this._buildData(lastMatches[0].node) };
+    }
+
+    // Multiple candidates with same last name — score each by:
+    //   • first-name prefix match  (Matt ↔ Matthew)
+    //   • department ↔ course subject alignment
+    const scored = lastMatches.map(edge => {
+      const prof = edge.node;
+      const profFirst = prof.firstName.toLowerCase();
+      let score = 0;
+      if (profFirst.startsWith(expFirst) || expFirst.startsWith(profFirst)) score += 4;
+      score += this._deptScore(prof.department, subject);
+      return { prof, score };
+    });
+
+    scored.sort((a, b) => b.score - a.score);
+
+    // Return the best-scored candidate only if we have at least one signal.
+    // If every candidate scores 0 we can't distinguish them — return null
+    // rather than silently show the wrong professor.
+    if (scored[0].score > 0) {
+      return { found: true, data: this._buildData(scored[0].prof) };
     }
     return null;
   },
 
-  async search(lastName, firstName, hostname) {
+  async search(lastName, firstName, hostname, courseInfo) {
     const { schoolId, filter } = getSchoolConfig(hostname);
     try {
       if (!PRODUCTION_MODE) console.log(`[RMP API] Attempt 1 — searching by lastName: "${lastName}"`);
       const byLast = await this._queryRMP(lastName, schoolId, filter);
       if (byLast.length > 0) {
-        const match = this._findMatch(byLast, firstName, lastName);
+        const match = this._findMatch(byLast, firstName, lastName, courseInfo);
         if (match) return match;
       }
 
       // Retry with firstName as the search key.
       // PeopleSoft sometimes shows "Last First" without a comma (e.g. "Chanana Poonam"),
-      // so our parser assigns firstName/lastName backwards. Swapping the search and
-      // the expected names corrects for this.
+      // so our parser assigns firstName/lastName backwards. Swapping fixes this.
       if (firstName && firstName.toLowerCase() !== lastName.toLowerCase()) {
         if (!PRODUCTION_MODE) console.log(`[RMP API] Attempt 2 — retrying with firstName as search: "${firstName}"`);
         const byFirst = await this._queryRMP(firstName, schoolId, filter);
         if (byFirst.length > 0) {
-          const match = this._findMatch(byFirst, lastName, firstName);
+          const match = this._findMatch(byFirst, lastName, firstName, courseInfo);
           if (match) return match;
         }
       }
@@ -363,7 +437,7 @@ function parseProfessorName(fullName) {
 /**
  * Fetch professor data (with caching and rate limiting)
  */
-async function fetchProfessorData(professorName, school = 'uh.edu') {
+async function fetchProfessorData(professorName, school = 'uh.edu', courseInfo = null) {
   try {
     const { firstName, lastName } = parseProfessorName(professorName);
 
@@ -393,7 +467,7 @@ async function fetchProfessorData(professorName, school = 'uh.edu') {
 
     // Fetch from provider (pass firstName and lastName)
     await logDebug(`Fetching from RMP API: ${lastName}, ${firstName}`);
-    const result = await DataProvider.search(lastName, firstName, school);
+    const result = await DataProvider.search(lastName, firstName, school, courseInfo);
 
     // Cache the result (even if not found, to prevent repeated lookups)
     await saveToCache(cacheKey, result);
@@ -477,7 +551,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (request.action === 'getProfessorData') {
     if (!PRODUCTION_MODE) console.log('[Background] Fetching professor data for:', request.professorName);
-    fetchProfessorData(request.professorName, request.school)
+    fetchProfessorData(request.professorName, request.school, request.courseInfo)
       .then(data => {
         if (!PRODUCTION_MODE) console.log('[Background] Sending response:', data);
         sendResponse(data);
