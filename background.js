@@ -21,7 +21,7 @@ function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
 // Cache configuration
 const CACHE_CONFIG = {
   defaultTTL: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
-  prefix: 'courseMate_v3_'
+  prefix: 'courseMate_v4_'
 };
 
 /**
@@ -147,14 +147,32 @@ const RMPProvider = {
         }
       }
     `;
+    const queryVars = schoolId
+      ? { text: searchText, schoolID: schoolId }
+      : { text: searchText };
     const response = await fetchWithTimeout(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Basic dGVzdDp0ZXN0' },
-      body: JSON.stringify({ query, variables: { query: { text: searchText, schoolID: schoolId }, count: 10 } })
+      body: JSON.stringify({ query, variables: { query: queryVars, count: 10 } })
     }, 8000);
     const data = await response.json();
     const edges = data?.data?.newSearch?.teachers?.edges || [];
+    if (!filter) return edges;
     return edges.filter(edge => (edge.node.school?.name || '').toLowerCase().includes(filter));
+  },
+
+  // Exact first+last name match only — used for cross-school fallback to avoid false positives
+  _findExactMatch(professors, expectedFirst, expectedLast) {
+    const expFirst = expectedFirst.toLowerCase();
+    const expLast = expectedLast.toLowerCase();
+    for (const edge of professors) {
+      const prof = edge.node;
+      if (prof.firstName.toLowerCase() === expFirst &&
+          prof.lastName.toLowerCase() === expLast) {
+        return { found: true, data: this._buildData(prof) };
+      }
+    }
+    return null;
   },
 
   // Score how well a professor's RMP department matches the course subject code.
@@ -269,6 +287,20 @@ const RMPProvider = {
           const match = this._findMatch(byFirst, lastName, firstName, courseInfo);
           if (match) return match;
         }
+      }
+
+      // Fallback: search without school ID for professors whose RMP profile
+      // is still listed under a previous school (e.g. transferred from Collin College to UNT).
+      // Use strict exact-name matching only to avoid false positives across schools.
+      if (!PRODUCTION_MODE) console.log(`[RMP API] Attempt 3 — cross-school fallback for: "${lastName}"`);
+      const fallbackByLast = await this._queryRMP(lastName, null, null);
+      const exactByLast = this._findExactMatch(fallbackByLast, firstName, lastName);
+      if (exactByLast) return exactByLast;
+
+      if (firstName && firstName.toLowerCase() !== lastName.toLowerCase()) {
+        const fallbackByFirst = await this._queryRMP(firstName, null, null);
+        const exactByFirst = this._findExactMatch(fallbackByFirst, lastName, firstName);
+        if (exactByFirst) return exactByFirst;
       }
 
       return { found: false, message: 'Professor not found on RMP' };
