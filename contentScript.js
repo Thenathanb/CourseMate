@@ -55,6 +55,24 @@ const hoverState = {
  * Extract professor name from element
  */
 function extractProfessorName(element) {
+  // Banner SSB instructor cell — trust the cell contents are a professor name.
+  // Strip role markers and accept without strict pattern validation so that
+  // hyphenated names, compound surnames, apostrophes, and all-caps formats all work.
+  const isBannerSsb = !!element.closest('td[data-property="instructor"]');
+  if (isBannerSsb) {
+    const anchor = element.tagName === 'A'
+      ? element
+      : element.querySelector('a[href^="mailto:"], a.email');
+    let text = (anchor || element).textContent
+      .replace(/\s*\((Primary|Secondary|Co-Instructor|Teaching Assistant)\)\s*/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!text || text.length < 3) return null;
+    if (/^(TBA|TBD|Staff|Various|Multiple|Online)$/i.test(text)) return null;
+    if (/^\d+$/.test(text)) return null;
+    return text;
+  }
+
   let text = element.textContent.trim();
 
   // Skip empty or very short text
@@ -63,26 +81,21 @@ function extractProfessorName(element) {
   // Skip common non-name patterns
   const skipPatterns = [
     /^(TBA|TBD|Staff|Various|Multiple|Online)$/i,
-    /^\d+$/,  // Just numbers
-    /^[A-Z]{2,5}\s*\d{4}$/,  // Course codes like "CS 1234"
+    /^\d+$/,
+    /^[A-Z]{2,5}\s*\d{4}$/,
   ];
-
   for (const pattern of skipPatterns) {
     if (pattern.test(text)) return null;
   }
 
-  // Look for name patterns
-  // Matches: "Last, First", "First Last", "First M. Last"
+  // PeopleSoft / generic selectors — stricter validation
   const namePatterns = [
-    /^([A-Z][a-z]+),\s*([A-Z][a-z]+)/,  // Last, First
-    /^([A-Z][a-z]+)\s+([A-Z]\.?\s+)?([A-Z][a-z]+)$/,  // First M. Last or First Last
-    /^([A-Z\s]+),\s*([A-Z\s]+)$/  // ALL CAPS: LAST, FIRST
+    /^([A-Z][a-zA-Z'\-]+),\s*([A-Z])/,       // Last, First (allows hyphens, apostrophes)
+    /^([A-Z][a-zA-Z'\-]+)\s+([A-Z]\.?\s+)?([A-Z][a-zA-Z'\-]+)$/, // First [M.] Last
+    /^([A-Z][A-Z'\-\s]+),\s*([A-Z][A-Z'\-\s]+)$/  // ALL CAPS: LAST, FIRST
   ];
-
   for (const pattern of namePatterns) {
-    if (pattern.test(text)) {
-      return text;
-    }
+    if (pattern.test(text)) return text;
   }
 
   return null;
@@ -526,20 +539,37 @@ function createErrorBadge(message) {
  * Insert badge next to professor name
  */
 function insertBadge(element, badge) {
-  // For anchor tags (Banner SSB mailto links), insert after the element
-  // as a sibling so the badge sits beside the name, not inside the link.
+  // Anchor tag (Banner SSB with email link): insert badge as sibling after the anchor
   if (element.tagName === 'A') {
-    const existingBadge = element.nextElementSibling;
-    if (existingBadge && existingBadge.classList.contains('coursemate-badge')) {
-      activeBadges.delete(existingBadge);
-      existingBadge.replaceWith(badge);
+    const next = element.nextElementSibling;
+    if (next && next.classList.contains('coursemate-badge')) {
+      activeBadges.delete(next);
+      next.replaceWith(badge);
     } else {
       element.insertAdjacentElement('afterend', badge);
     }
     return;
   }
 
-  // For span/other elements (PeopleSoft), append inside the element
+  // TD cell (Banner SSB plain-text instructor, no email link):
+  // insert badge after any anchor inside, or prepend to cell content
+  if (element.tagName === 'TD') {
+    const existingBadge = element.querySelector('.coursemate-badge');
+    if (existingBadge) {
+      activeBadges.delete(existingBadge);
+      existingBadge.replaceWith(badge);
+    } else {
+      const anchor = element.querySelector('a[href^="mailto:"], a.email');
+      if (anchor) {
+        anchor.insertAdjacentElement('afterend', badge);
+      } else {
+        element.insertAdjacentElement('afterbegin', badge);
+      }
+    }
+    return;
+  }
+
+  // Span / other elements (PeopleSoft): append badge inside the element
   const existingBadge = element.querySelector('.coursemate-badge');
   if (existingBadge) {
     activeBadges.delete(existingBadge);
@@ -619,14 +649,30 @@ async function processProfessorElement(element) {
 function scanPage() {
   console.log('[CourseMate] Scanning page for professors...');
 
+  // Banner SSB: process every instructor cell directly.
+  // Each cell may contain an <a mailto> link or plain text (no email on file).
+  // We use the anchor when present for clean text and precise badge placement,
+  // otherwise fall back to the <td> itself.
+  const bannerCells = document.querySelectorAll('td[data-property="instructor"]');
+  if (bannerCells.length > 0) {
+    console.log(`[CourseMate] Found ${bannerCells.length} Banner SSB instructor cells`);
+    bannerCells.forEach(cell => {
+      const anchor = cell.querySelector('a[href^="mailto:"], a.email');
+      const target = anchor || cell;
+      processProfessorElement(target);
+    });
+  }
+
+  // PeopleSoft and generic selectors
   for (const selector of SELECTORS.instructorElements) {
+    // Skip Banner SSB selectors — handled above
+    if (selector.includes('data-property="instructor"')) continue;
     try {
       const elements = document.querySelectorAll(selector);
-      console.log(`[CourseMate] Found ${elements.length} elements matching "${selector}"`);
-
-      elements.forEach(element => {
-        processProfessorElement(element);
-      });
+      if (elements.length > 0) {
+        console.log(`[CourseMate] Found ${elements.length} elements matching "${selector}"`);
+        elements.forEach(element => processProfessorElement(element));
+      }
     } catch (error) {
       console.error(`[CourseMate] Error with selector "${selector}":`, error);
     }
