@@ -111,15 +111,20 @@ function getSchoolConfig(hostname) {
  * Real RMP Provider using GraphQL API
  */
 const RMPProvider = {
-  async search(lastName, firstName, hostname) {
-    const { schoolId, filter } = getSchoolConfig(hostname);
-    const url = 'https://www.ratemyprofessors.com/graphql';
-
-    const headers = {
-      'Content-Type': 'application/json',
-      'Authorization': 'Basic dGVzdDp0ZXN0'
+  _buildData(prof) {
+    return {
+      rmpId: prof.id,
+      name: `${prof.firstName} ${prof.lastName}`,
+      overallRating: prof.avgRating,
+      numRatings: prof.numRatings,
+      wouldTakeAgainPercent: prof.wouldTakeAgainPercentRounded,
+      difficulty: prof.avgDifficulty,
+      rmpUrl: `https://www.ratemyprofessors.com/professor/${prof.legacyId}`
     };
+  },
 
+  async _queryRMP(searchText, schoolId, filter) {
+    const url = 'https://www.ratemyprofessors.com/graphql';
     const query = `
       query NewSearchTeachersQuery($query: TeacherSearchQuery!, $count: Int) {
         newSearch {
@@ -130,9 +135,7 @@ const RMPProvider = {
                 legacyId
                 firstName
                 lastName
-                school {
-                  name
-                }
+                school { name }
                 department
                 avgRating
                 numRatings
@@ -144,88 +147,57 @@ const RMPProvider = {
         }
       }
     `;
+    const response = await fetchWithTimeout(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Basic dGVzdDp0ZXN0' },
+      body: JSON.stringify({ query, variables: { query: { text: searchText, schoolID: schoolId }, count: 10 } })
+    }, 8000);
+    const data = await response.json();
+    const edges = data?.data?.newSearch?.teachers?.edges || [];
+    return edges.filter(edge => (edge.node.school?.name || '').toLowerCase().includes(filter));
+  },
 
-    const variables = {
-      query: {
-        text: lastName,
-        schoolID: schoolId
-      },
-      count: 10
-    };
+  _findMatch(professors, expectedFirst, expectedLast) {
+    // Exact first + last match
+    for (const edge of professors) {
+      const prof = edge.node;
+      if (prof.firstName.toLowerCase() === expectedFirst.toLowerCase() &&
+          prof.lastName.toLowerCase() === expectedLast.toLowerCase()) {
+        return { found: true, data: this._buildData(prof) };
+      }
+    }
+    // Best match: last name alone matches
+    const best = professors[0]?.node;
+    if (best?.lastName.toLowerCase() === expectedLast.toLowerCase()) {
+      return { found: true, data: this._buildData(best) };
+    }
+    return null;
+  },
 
+  async search(lastName, firstName, hostname) {
+    const { schoolId, filter } = getSchoolConfig(hostname);
     try {
-      if (!PRODUCTION_MODE) console.log(`[RMP API] Searching for: ${lastName}, ${firstName} at school ${schoolId}`);
-      const response = await fetchWithTimeout(url, {
-        method: 'POST',
-        headers: headers,
-        body: JSON.stringify({ query, variables })
-      }, 8000);
-
-      const data = await response.json();
-      if (!PRODUCTION_MODE) console.log(`[RMP API] Raw response:`, data);
-      const edges = data?.data?.newSearch?.teachers?.edges || [];
-      if (!PRODUCTION_MODE) console.log(`[RMP API] Found ${edges.length} results`);
-
-      if (edges.length === 0) {
-        if (!PRODUCTION_MODE) console.log(`[RMP API] No results found for ${lastName}, ${firstName}`);
-        return { found: false, message: 'No RMP results found' };
+      if (!PRODUCTION_MODE) console.log(`[RMP API] Attempt 1 — searching by lastName: "${lastName}"`);
+      const byLast = await this._queryRMP(lastName, schoolId, filter);
+      if (byLast.length > 0) {
+        const match = this._findMatch(byLast, firstName, lastName);
+        if (match) return match;
       }
 
-      // Filter to professors at the detected school
-      const uhProfessors = edges.filter(edge => {
-        const schoolName = edge.node.school?.name || '';
-        const isMatch = schoolName.toLowerCase().includes(filter);
-        if (!PRODUCTION_MODE) console.log(`[RMP API] Checking: ${edge.node.firstName} ${edge.node.lastName} at ${schoolName} - Match: ${isMatch}`);
-        return isMatch;
-      });
-
-      if (!PRODUCTION_MODE) console.log(`[RMP API] Found ${uhProfessors.length} professors out of ${edges.length} total results`);
-
-      if (uhProfessors.length === 0) {
-        return { found: false, message: 'No professors found at this school in results' };
-      }
-
-      // Try exact match first
-      for (const edge of uhProfessors) {
-        const prof = edge.node;
-        if (prof.firstName.toLowerCase() === firstName.toLowerCase() &&
-            prof.lastName.toLowerCase() === lastName.toLowerCase()) {
-          if (!PRODUCTION_MODE) console.log(`[RMP API] Exact match found: ${prof.firstName} ${prof.lastName}`);
-          return {
-            found: true,
-            data: {
-              rmpId: prof.id,
-              name: `${prof.firstName} ${prof.lastName}`,
-              overallRating: prof.avgRating,
-              numRatings: prof.numRatings,
-              wouldTakeAgainPercent: prof.wouldTakeAgainPercentRounded,
-              difficulty: prof.avgDifficulty,
-              rmpUrl: `https://www.ratemyprofessors.com/professor/${prof.legacyId}`
-            }
-          };
+      // Retry with firstName as the search key.
+      // PeopleSoft sometimes shows "Last First" without a comma (e.g. "Chanana Poonam"),
+      // so our parser assigns firstName/lastName backwards. Swapping the search and
+      // the expected names corrects for this.
+      if (firstName && firstName.toLowerCase() !== lastName.toLowerCase()) {
+        if (!PRODUCTION_MODE) console.log(`[RMP API] Attempt 2 — retrying with firstName as search: "${firstName}"`);
+        const byFirst = await this._queryRMP(firstName, schoolId, filter);
+        if (byFirst.length > 0) {
+          const match = this._findMatch(byFirst, lastName, firstName);
+          if (match) return match;
         }
       }
 
-      // Use best match if last name matches
-      const bestMatch = uhProfessors[0].node;
-      if (bestMatch.lastName.toLowerCase() === lastName.toLowerCase()) {
-        if (!PRODUCTION_MODE) console.log(`[RMP API] Using best match: ${bestMatch.firstName} ${bestMatch.lastName}`);
-        return {
-          found: true,
-          data: {
-            rmpId: bestMatch.id,
-            name: `${bestMatch.firstName} ${bestMatch.lastName}`,
-            overallRating: bestMatch.avgRating,
-            numRatings: bestMatch.numRatings,
-            wouldTakeAgainPercent: bestMatch.wouldTakeAgainPercentRounded,
-            difficulty: bestMatch.avgDifficulty,
-            rmpUrl: `https://www.ratemyprofessors.com/professor/${bestMatch.legacyId}`
-          }
-        };
-      }
-
-      return { found: false, message: 'No good match found' };
-
+      return { found: false, message: 'Professor not found on RMP' };
     } catch (error) {
       console.error('RMP API error:', error);
       return { found: false, message: error.message };
