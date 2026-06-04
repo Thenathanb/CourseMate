@@ -72,6 +72,10 @@
   color: #dc3545;  /* Red for low ratings (<3.0) */
 }
 
+.coursemate-badge .rating.rating-none {
+  color: #6c757d;  /* Grey for no ratings yet */
+}
+
 .coursemate-badge .rating-count {
   color: #6c757d;
   font-size: 11px;

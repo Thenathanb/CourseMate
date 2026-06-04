@@ -403,8 +403,12 @@ function createRatingBadge(data, context) {
   const badge = document.createElement('span');
   badge.className = 'coursemate-badge coursemate-found';
 
-  const rating = data.overallRating.toFixed(1);
-  const ratingClass = rating >= 4.0 ? 'rating-high' : rating >= 3.0 ? 'rating-medium' : 'rating-low';
+  const hasRatings = data.numRatings > 0 && data.overallRating > 0;
+  const rating = hasRatings ? data.overallRating.toFixed(1) : 'N/A';
+  const ratingClass = !hasRatings ? 'rating-none'
+    : rating >= 4.0 ? 'rating-high'
+    : rating >= 3.0 ? 'rating-medium'
+    : 'rating-low';
 
   badge.innerHTML = `
     <span class="rating ${ratingClass}">${rating}</span>
