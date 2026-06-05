@@ -596,6 +596,25 @@ function insertBadge(element, badge) {
   }
 }
 
+// Remove any CourseMate badge inserted next to element (used when no rating found)
+function removeBadge(element) {
+  if (element.tagName === 'A' || (element.tagName === 'SPAN' && element.parentElement?.getAttribute('role') === 'option')) {
+    const next = element.nextElementSibling;
+    if (next && next.classList.contains('coursemate-badge')) {
+      activeBadges.delete(next);
+      next.remove();
+    }
+    return;
+  }
+  if (element.tagName === 'TD') {
+    const badge = element.querySelector('.coursemate-badge');
+    if (badge) { activeBadges.delete(badge); badge.remove(); }
+    return;
+  }
+  const badge = element.querySelector('.coursemate-badge');
+  if (badge) { activeBadges.delete(badge); badge.remove(); }
+}
+
 /**
  * Process a single professor name element
  */
@@ -637,25 +656,20 @@ async function processProfessorElement(element) {
     // Service worker can return undefined if it was sleeping — retry on next rescan
     if (!response) {
       processedElements.delete(element);
-      insertBadge(element, createNotFoundBadge(professorName));
+      removeBadge(element);
       return;
     }
 
-    let finalBadge;
-
     if (response.found && response.data) {
-      finalBadge = createRatingBadge(response.data, { professorName, courseInfo });
+      insertBadge(element, createRatingBadge(response.data, { professorName, courseInfo }));
     } else {
-      finalBadge = createNotFoundBadge(professorName);
+      // No rating found — remove the loading badge and show nothing
+      removeBadge(element);
     }
-
-    insertBadge(element, finalBadge);
 
   } catch (error) {
     console.error('[CourseMate] Error processing professor:', error);
-    // On error, show not-found rather than a confusing yellow ! badge
-    insertBadge(element, createNotFoundBadge(professorName));
-    // Unmark so it retries on the next page rescan
+    removeBadge(element);
     processedElements.delete(element);
   }
 }
