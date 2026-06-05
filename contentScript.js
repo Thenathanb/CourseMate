@@ -19,8 +19,8 @@ const SELECTORS = {
     'td[data-property="instructor"] a.email',
     'td[data-property="instructor"] a[href^="mailto:"]',
 
-    // CollegeScheduler (UTD via collegescheduler.com)
-    '[id^="instructor-option-"] span',
+    // CollegeScheduler (UTD via collegescheduler.com) — first child span only
+    '[id^="instructor-option-"] > span:first-child',
 
     // Generic fallbacks
     '.instructor-name',
@@ -395,6 +395,9 @@ async function showTooltipForBadge(badge, baseData, context) {
  * Check if element should be excluded
  */
 function shouldExclude(element) {
+  // Never process an element that is (or lives inside) a badge we already inserted
+  if (element.closest('.coursemate-badge')) return true;
+
   // Check if element or any parent matches exclude selectors
   for (const selector of SELECTORS.excludeElements) {
     if (element.closest(selector)) {
