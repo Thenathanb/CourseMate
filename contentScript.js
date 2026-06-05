@@ -653,7 +653,7 @@ async function processProfessorElement(element) {
       courseInfo: courseInfo
     });
 
-    // Service worker can return undefined if it was sleeping — retry on next rescan
+    // Service worker sleeping — remove loading badge and retry on next rescan
     if (!response) {
       processedElements.delete(element);
       removeBadge(element);
@@ -661,13 +661,15 @@ async function processProfessorElement(element) {
     }
 
     if (response.found && response.data) {
+      // Has a rating — show the rating badge
       insertBadge(element, createRatingBadge(response.data, { professorName, courseInfo }));
     } else {
-      // No rating found — remove the loading badge and show nothing
-      removeBadge(element);
+      // Confirmed not on RMP — show ? so student can add a rating
+      insertBadge(element, createNotFoundBadge(professorName));
     }
 
   } catch (error) {
+    // Unknown error — silently retry rather than show a misleading badge
     console.error('[CourseMate] Error processing professor:', error);
     removeBadge(element);
     processedElements.delete(element);
