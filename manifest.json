@@ -3,7 +3,7 @@
   "name": "CourseMate (Test)",
   "short_name": "CourseMate",
   "version": "1.0.0",
-  "description": "Test build: RateMyProfessors ratings on PeopleSoft course registration pages for UH, UNT, UTSA, UT Austin, and UT Dallas.",
+  "description": "Test build: RateMyProfessors ratings on course registration pages for UH, UNT, UTSA, UT Austin, UT Dallas, and CollegeScheduler.",
   "permissions": [
     "storage"
   ],
@@ -13,6 +13,7 @@
     "https://*.utsa.edu/*",
     "https://*.utexas.edu/*",
     "https://*.utdallas.edu/*",
+    "https://utdallas.collegescheduler.com/*",
     "https://www.ratemyprofessors.com/*",
     "https://cougargrades.io/*",
     "https://unpkg.com/*"
@@ -27,7 +28,8 @@
         "https://*.unt.edu/*",
         "https://*.utsa.edu/*",
         "https://*.utexas.edu/*",
-        "https://*.utdallas.edu/*"
+        "https://*.utdallas.edu/*",
+        "https://utdallas.collegescheduler.com/*"
       ],
       "js": ["contentScript.js"],
       "css": ["ui.css"],

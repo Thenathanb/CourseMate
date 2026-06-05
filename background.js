@@ -97,7 +97,8 @@ const SCHOOL_CONFIGS = {
   'unt.edu':      { schoolId: 'U2Nob29sLTEyNTI=',  filter: 'university of north texas' },
   'utsa.edu':     { schoolId: 'U2Nob29sLTE1MTY=',  filter: 'university of texas at san antonio' },
   'utexas.edu':   { schoolId: 'U2Nob29sLTEyNTU=',  filter: 'university of texas at austin' },
-  'utdallas.edu': { schoolId: 'U2Nob29sLTEyNzM=',  filter: 'university of texas at dallas' },
+  'utdallas.edu':              { schoolId: 'U2Nob29sLTEyNzM=', filter: 'university of texas at dallas' },
+  'utdallas.collegescheduler.com': { schoolId: 'U2Nob29sLTEyNzM=', filter: 'university of texas at dallas' },
 };
 
 function getSchoolConfig(hostname) {

@@ -12,12 +12,15 @@ const SELECTORS = {
   // - Elements within course listings
 
   instructorElements: [
-    // PeopleSoft (UH, UNT, UT Austin, UTD)
+    // PeopleSoft (UH, UNT, UT Austin, UTD native)
     'span.ps_box-value[id*="SSR_INSTR_LONG"]',
 
-    // Ellucian Banner Self-Service (UTSA) — class name and href-based selectors
+    // Ellucian Banner Self-Service (UTSA)
     'td[data-property="instructor"] a.email',
     'td[data-property="instructor"] a[href^="mailto:"]',
+
+    // CollegeScheduler (UTD via collegescheduler.com)
+    '[id^="instructor-option-"] span',
 
     // Generic fallbacks
     '.instructor-name',
@@ -55,11 +58,12 @@ const hoverState = {
  * Extract professor name from element
  */
 function extractProfessorName(element) {
-  // Banner SSB instructor cell — trust the cell contents are a professor name.
+  // Banner SSB / CollegeScheduler — trust the element contents are a professor name.
   // Strip role markers and accept without strict pattern validation so that
-  // hyphenated names, compound surnames, apostrophes, and all-caps formats all work.
+  // hyphenated names, compound surnames (De La Cruz), multi-word names, etc. all work.
   const isBannerSsb = !!element.closest('td[data-property="instructor"]');
-  if (isBannerSsb) {
+  const isCollegeScheduler = !!element.closest('[id^="instructor-option-"]');
+  if (isBannerSsb || isCollegeScheduler) {
     const anchor = element.tagName === 'A'
       ? element
       : element.querySelector('a[href^="mailto:"], a.email');
@@ -569,7 +573,19 @@ function insertBadge(element, badge) {
     return;
   }
 
-  // Span / other elements (PeopleSoft): append badge inside the element
+  // CollegeScheduler: span inside role="option" — insert after the span as a sibling
+  if (element.tagName === 'SPAN' && element.parentElement?.getAttribute('role') === 'option') {
+    const next = element.nextElementSibling;
+    if (next && next.classList.contains('coursemate-badge')) {
+      activeBadges.delete(next);
+      next.replaceWith(badge);
+    } else {
+      element.insertAdjacentElement('afterend', badge);
+    }
+    return;
+  }
+
+  // PeopleSoft span / other elements: append badge inside the element
   const existingBadge = element.querySelector('.coursemate-badge');
   if (existingBadge) {
     activeBadges.delete(existingBadge);
@@ -757,14 +773,17 @@ function initMutationObserver() {
   console.log('[CourseMate] MutationObserver initialized');
 }
 
-// Banner SSB fires search results after a button click — listen for it as a fallback
+// Banner SSB / CollegeScheduler: listen for clicks that trigger dynamic content loads
 function initBannerSsbSearchListener() {
   document.addEventListener('click', (e) => {
-    const btn = e.target.closest('button, input[type="submit"], a[id*="search"], a[class*="search"]');
-    if (btn) {
-      // Wait for Banner SSB to finish rendering results (AJAX + render time)
-      setTimeout(scanPage, 1500);
-      setTimeout(scanPage, 3000);
+    // Banner SSB search buttons
+    const isBannerSearch = !!e.target.closest('button, input[type="submit"], a[id*="search"], a[class*="search"]');
+    // CollegeScheduler instructor dropdown trigger (any click that could open it)
+    const isCollegeSchedulerTrigger = !!e.target.closest('[class*="dropdown"], [class*="filter"], [class*="instructor"]');
+
+    if (isBannerSearch || isCollegeSchedulerTrigger) {
+      setTimeout(scanPage, 800);
+      setTimeout(scanPage, 2000);
     }
   }, true);
 }
