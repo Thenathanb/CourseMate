@@ -596,29 +596,6 @@ function insertBadge(element, badge) {
   }
 }
 
-// Returns the .results-linked div in the linked column of the same Banner SSB row,
-// or null if the element is not in a Banner SSB row.
-function getBannerLinkedDiv(element) {
-  const row = element.closest('tr[data-id]');
-  if (!row) return null;
-  const linkedCell = row.querySelector('td[data-property="linked"]');
-  if (!linkedCell) return null;
-  return linkedCell.querySelector('.results-linked') || linkedCell;
-}
-
-// Insert a badge into the Banner SSB linked cell, replacing any prior badge there.
-function insertLinkedBadge(linkedDiv, badge) {
-  if (!linkedDiv) return;
-  const existing = linkedDiv.querySelector('.coursemate-badge');
-  if (existing) {
-    activeBadges.delete(existing);
-    existing.replaceWith(badge);
-  } else {
-    linkedDiv.innerHTML = '';
-    linkedDiv.appendChild(badge);
-  }
-}
-
 /**
  * Process a single professor name element
  */
@@ -646,12 +623,8 @@ async function processProfessorElement(element) {
     console.log(`[CourseMate] Matched course: ${courseInfo.display}`);
   }
 
-  const linkedDiv = getBannerLinkedDiv(element);
-
-  // Insert loading badge in the instructor cell and linked column
   const loadingBadge = createLoadingBadge();
   insertBadge(element, loadingBadge);
-  insertLinkedBadge(linkedDiv, createLoadingBadge());
 
   try {
     const response = await chrome.runtime.sendMessage({
@@ -661,11 +634,16 @@ async function processProfessorElement(element) {
       courseInfo: courseInfo
     });
 
+    // Service worker can return undefined if it was sleeping — retry on next rescan
+    if (!response) {
+      processedElements.delete(element);
+      insertBadge(element, createNotFoundBadge(professorName));
+      return;
+    }
+
     let finalBadge;
 
-    if (response.error) {
-      finalBadge = createErrorBadge(response.error);
-    } else if (response.found && response.data) {
+    if (response.found && response.data) {
       finalBadge = createRatingBadge(response.data, { professorName, courseInfo });
     } else {
       finalBadge = createNotFoundBadge(professorName);
@@ -673,24 +651,12 @@ async function processProfessorElement(element) {
 
     insertBadge(element, finalBadge);
 
-    // Also show badge in the linked column (Banner SSB) for easy access
-    if (linkedDiv) {
-      let linkedBadge;
-      if (response.error) {
-        linkedBadge = createErrorBadge(response.error);
-      } else if (response.found && response.data) {
-        linkedBadge = createRatingBadge(response.data, { professorName, courseInfo });
-      } else {
-        linkedBadge = createNotFoundBadge(professorName);
-      }
-      insertLinkedBadge(linkedDiv, linkedBadge);
-    }
-
   } catch (error) {
     console.error('[CourseMate] Error processing professor:', error);
-    const errorBadge = createErrorBadge(error.message);
-    insertBadge(element, errorBadge);
-    insertLinkedBadge(linkedDiv, createErrorBadge(error.message));
+    // On error, show not-found rather than a confusing yellow ! badge
+    insertBadge(element, createNotFoundBadge(professorName));
+    // Unmark so it retries on the next page rescan
+    processedElements.delete(element);
   }
 }
 
