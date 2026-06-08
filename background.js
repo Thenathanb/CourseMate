@@ -99,6 +99,7 @@ const SCHOOL_CONFIGS = {
   'utexas.edu':   { schoolId: 'U2Nob29sLTEyNTU=',  filter: 'university of texas at austin' },
   'utdallas.edu':              { schoolId: 'U2Nob29sLTEyNzM=', filter: 'university of texas at dallas' },
   'utdallas.collegescheduler.com': { schoolId: 'U2Nob29sLTEyNzM=', filter: 'university of texas at dallas' },
+  'tsu.edu':           { schoolId: 'U2Nob29sLTEwMTA=', filter: 'texas southern' },
 };
 
 function getSchoolConfig(hostname) {
