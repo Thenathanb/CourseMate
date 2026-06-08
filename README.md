@@ -1,477 +1,224 @@
-# CourseMate 
+# CourseMate
 
-A Chrome Extension (Manifest V3) that integrates RateMyProfessors ratings directly into supported university course catalog pages (currently University of Houston).
+A Chrome/Firefox extension that injects RateMyProfessors ratings directly into university course registration pages — so you can see who's teaching before you register.
 
 ![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-blue)
 ![Manifest V3](https://img.shields.io/badge/Manifest-V3-green)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
+---
+
+## Supported Schools
+
+| School | Branch | Registration System | Domain |
+|--------|--------|---------------------|--------|
+| University of Houston | `main` | PeopleSoft | `*.uh.edu` |
+| University of North Texas | `coursemate-unt` | PeopleSoft | `*.unt.edu` |
+| UT San Antonio | `coursemate-utsa` | Ellucian Banner SSB | `*.utsa.edu` |
+| UT Austin | `coursemate-utaustin` | PeopleSoft | `*.utexas.edu` |
+| UT Dallas | `coursemate-utd` | CollegeScheduler | `utdallas.collegescheduler.com` |
+
+> **Testing all schools at once?** Use the `coursemate-test` branch — a single build that covers all five schools and auto-detects which one you're on.
+
+**Coming soon (Group B — different registration systems):**
+Texas A&M · Texas State · Texas Tech · Texas Southern
+
+---
+
 ## Features
 
-- **Automatic Detection** - Finds instructor names on supported university course pages (currently UH)
-- **Instant Ratings** - Shows RMP rating, # of reviews, difficulty, "would take again" %
-- **One-Click Access** - Click any badge to open the full RMP profile
-- **Smart Caching** - Reduces API calls with configurable cache duration
-- **Rate Limiting** - Prevents spamming external services
-- **Dynamic Content** - Works with pages that load instructors asynchronously
-- **Clean UI** - Non-intrusive badges with color-coded ratings
-- **Privacy Focused** - All data stored locally, no tracking
+- **Automatic Detection** — Finds instructor names on supported registration pages (PeopleSoft, Banner SSB, CollegeScheduler)
+- **Live RMP Ratings** — Shows overall rating, review count, difficulty, and "would take again %" directly on the page
+- **Hover Tooltip** — Hover any badge to see up to 3 recent RMP reviews and a direct link to the full profile
+- **Smart Matching** — Handles name format variants ("Last, First", "First Last", all-caps, hyphenated, compound surnames), first-name prefix matching (Matt ↔ Matthew), and department-based disambiguation when multiple professors share a last name
+- **Cross-School Fallback** — Finds professors whose RMP profile is still listed under a previous institution (e.g., transferred from another school)
+- **Not-Found Badge** — Shows `?` for professors not on RMP with a hover link to add their rating at `ratemyprofessors.com/add/professor`
+- **Grey N/A Badge** — Professors with an RMP account but zero ratings show grey `N/A` instead of a misleading red `0.0`
+- **CougarGrades Integration** — UH branch only: shows historical grade distribution (A–F %) and average GPA per professor/course, sourced from public CougarGrades data
+- **Smart Caching** — Results cached for 7 days to minimize API calls; cache prefix is versioned so stale entries are automatically ignored after updates
+- **Dynamic Content** — MutationObserver detects instructors loaded by AJAX/SPA frameworks (Banner SSB, CollegeScheduler)
+- **Privacy Focused** — All data stored locally via `chrome.storage.local`; nothing sent to third parties except RateMyProfessors when fetching ratings
+
+---
 
 ## Installation
 
-### Option 1: Load Unpacked Extension (Development)
+### Load Unpacked (Development / Testing)
 
-1. **Download or Clone this repository**
+1. **Clone the repo and check out the branch for your school**
    ```bash
-   git clone https://github.com/yourusername/CourseMate-UH.git
-   cd CourseMate-UH
+   git clone https://github.com/Thenathanb/CourseMate.git
+   cd CourseMate
+   git checkout coursemate-unt   # or main, coursemate-utsa, etc.
    ```
 
-2. **Open Chrome Extensions Page**
+2. **Open Chrome Extensions**
    - Navigate to `chrome://extensions/`
-   - Or click: Menu (⋮) → Extensions → Manage Extensions
+   - Enable **Developer mode** (top-right toggle)
 
-3. **Enable Developer Mode**
-   - Toggle the "Developer mode" switch in the top-right corner
+3. **Load Unpacked**
+   - Click **Load unpacked**
+   - Select the `CourseMate` folder (the one containing `manifest.json`)
 
-4. **Load the Extension**
-   - Click "Load unpacked"
-   - Select the `CourseMate-UH` folder (the one containing `manifest.json`)
+4. **Test it**
+   - Navigate to your school's course registration page
+   - Instructor names will automatically get rating badges
 
-5. **Verify Installation**
-   - You should see "CourseMate" in your extensions list
-   - The extension icon should appear in your Chrome toolbar
+### Multi-School Test Build
 
-### Option 2: Chrome Web Store (Coming Soon)
-*This extension is not yet published to the Chrome Web Store*
+To test all five schools from a single extension install:
 
-## Quick Start
+```bash
+git checkout coursemate-test
+```
 
-### Testing the Extension
+Load that folder as an unpacked extension. It detects your current school from the hostname and uses the correct RMP school ID automatically.
 
-1. **Navigate to a test page** - Since the extension is configured for UH pages (`*.uh.edu`), you'll need to test on a UH course catalog or schedule page.
+---
 
-2. **For immediate testing with mock data:**
-   - Open the extension and navigate to ANY webpage
-   - Open the browser console (F12 or Cmd+Option+I)
-   - Use the debug helpers to inject test instructor names:
+## Branch Structure
 
-   ```javascript
-   // Add a test professor name to the page
-   const testDiv = document.createElement('div');
-   testDiv.className = 'instructor-name';
-   testDiv.textContent = 'Smith, John';
-   document.body.appendChild(testDiv);
+```
+main                  UH (PeopleSoft) — includes CougarGrades
+├── coursemate-unt    UNT (PeopleSoft) — CougarGrades removed
+├── coursemate-utsa   UTSA (Banner SSB) — CougarGrades removed
+├── coursemate-utaustin  UT Austin (PeopleSoft) — CougarGrades removed
+├── coursemate-utd    UTD (CollegeScheduler) — CougarGrades removed
+└── coursemate-test   Multi-school build (all 5 schools, auto-detect)
+```
 
-   // Trigger a scan
-   window.courseMateDebug.scan();
-   ```
+Each school branch is an independent, deployable extension — only the school-specific values differ:
 
-3. **Mock professors available:**
-   - John Smith
-   - Sarah Johnson
-   - Robert Williams
-   - Emily Davis
+| Config | Location |
+|--------|----------|
+| RMP School ID | `background.js` → `SCHOOL_CONFIGS` |
+| Domain matches | `manifest.json` → `host_permissions` / `content_scripts.matches` |
+| School name filter | `background.js` → `SCHOOL_CONFIGS` |
+| Accent color | `ui.css` → `.coursemate-grade-bar-fill` |
 
-   Try these names in any format: "Last, First" or "First Last"
+---
 
-### Configuring for Real UH Pages
+## How It Works
 
-#### Step 1: Find the Correct DOM Selectors
+### Rating Lookup
 
-1. Navigate to a UH course catalog or schedule page (e.g., `https://www.uh.edu/...`)
+1. Content script detects instructor name elements using system-specific CSS selectors
+2. Sends name + hostname to the background service worker
+3. Background looks up the school config from hostname, queries RMP's GraphQL API
+4. **Three-attempt matching strategy:**
+   - Attempt 1: search by last name with school ID filter
+   - Attempt 2: swap first/last (handles "Last First" without comma)
+   - Attempt 3: search without school ID (catches transferred professors)
+5. Within each attempt, candidates are scored by first-name prefix match and department ↔ course subject alignment before a winner is selected
+6. Result is cached for 7 days
 
-2. Right-click on an instructor name and select "Inspect Element"
+### Supported Registration Systems
 
-3. Look for identifying patterns:
-   - **Class names**: `.instructor`, `.faculty-name`, `.professor`
-   - **Data attributes**: `[data-instructor]`, `[data-faculty]`
-   - **Table structure**: `td.instructor`, `td:nth-child(N)`
-   - **Parent containers**: `.course-row .instructor`
+| System | Selector used |
+|--------|--------------|
+| PeopleSoft | `span.ps_box-value[id*="SSR_INSTR_LONG"]` |
+| Ellucian Banner SSB | `td[data-property="instructor"]` (anchor or plain text) |
+| CollegeScheduler | `[id^="instructor-option-"] > span:first-child` |
 
-4. **Update the selectors in `contentScript.js`**:
-
-   Open [contentScript.js](contentScript.js) and locate this section (around line 12):
-
-   ```javascript
-   const SELECTORS = {
-     instructorElements: [
-       '.instructor-name',     // ← UPDATE THESE
-       '.faculty-name',        // ← WITH YOUR ACTUAL
-       '[data-instructor]',    // ← SELECTORS FROM UH PAGES
-       'td.instructor',
-       '.course-instructor',
-       'span[title*="Instructor"]',
-     ],
-     // ...
-   };
-   ```
-
-   **Example**: If instructors appear in a table cell with class `schedule-instructor`, add:
-   ```javascript
-   'td.schedule-instructor',
-   ```
-
-5. **Reload the extension**:
-   - Go to `chrome://extensions/`
-   - Click the refresh icon (↻) on the CourseMate card
-   - Reload the UH course page
-
-#### Step 2: Verify Detection
-
-1. Open the browser console (F12) on a UH course page
-2. Look for logs like:
-   ```
-   [CourseMate] Found professor: Johnson, Sarah
-   [CourseMate] Found 5 elements matching "td.instructor"
-   ```
-
-3. If no professors are detected, use the debug helpers:
-   ```javascript
-   // Check current selectors
-   window.courseMateDebug.showSelectors();
-
-   // Test a selector
-   window.courseMateDebug.addSelector('your-new-selector');
-
-   // Force a re-scan
-   window.courseMateDebug.reset();
-   ```
-
-## Extension Settings
-
-Click the extension icon in the Chrome toolbar to access settings:
-
-### General Settings
-- **Enable/Disable Extension** - Toggle the extension on/off
-- **Default School** - Choose your UH campus (main, Downtown, Clear Lake, Victoria)
-
-### Cache Settings
-- **Cache Duration** - How long to remember professor ratings (1 hour to 30 days)
-  - Recommended: 7 days (balances freshness with performance)
-
-### Developer Settings
-- **Debug Mode** - Enable detailed console logging for troubleshooting
-
-### Actions
-- **Save Settings** - Apply changes (some require page reload)
-- **Clear Cache** - Remove all cached professor data
+---
 
 ## File Structure
 
 ```
-CourseMate-UH/
+CourseMate/
 ├── manifest.json          # Extension configuration (MV3)
-├── background.js          # Service worker (data fetching, caching, rate limiting)
-├── contentScript.js       # DOM manipulation and badge injection
-├── ui.css                 # Badge styling
-├── options.html           # Settings page UI
-├── options.js             # Settings page logic
-├── icons/                 # Extension icons (16x16, 48x48, 128x128)
-│   └── README.txt         # Placeholder - add your PNG icons here
-└── README.md              # This file
+├── background.js          # Service worker: RMP API, caching, school routing
+├── contentScript.js       # DOM detection, badge injection, tooltip
+├── ui.css                 # Badge and tooltip styling
+├── options.html           # Settings page
+├── icons/                 # Extension icons (16px, 48px, 128px)
+└── README.md
 ```
-
-## Architecture
-
-### Data Flow
-
-```
-┌─────────────────┐
-│  UH Course Page │
-└────────┬────────┘
-         │ (1) Content script detects instructor names
-         ▼
-┌─────────────────┐
-│ contentScript.js│
-└────────┬────────┘
-         │ (2) Sends request to background
-         ▼
-┌─────────────────┐
-│  background.js  │ (3) Checks cache
-└────────┬────────┘
-         │ (4) If not cached, fetches from provider
-         ▼
-┌─────────────────┐
-│  MockProvider   │ (or RealProvider in production)
-└────────┬────────┘
-         │ (5) Returns rating data
-         ▼
-┌─────────────────┐
-│  Cache Storage  │ (chrome.storage.local)
-└────────┬────────┘
-         │ (6) Data returned to content script
-         ▼
-┌─────────────────┐
-│  Badge Display  │ (UI injected next to professor name)
-└─────────────────┘
-```
-
-### Key Components
-
-#### 1. Content Script ([contentScript.js](contentScript.js))
-- Scans the page for instructor names using configurable selectors
-- Normalizes names (handles "Last, First", suffixes, middle initials)
-- Injects badge elements next to instructor names
-- Uses `MutationObserver` to detect dynamically loaded content
-- Provides debug helpers for testing
-
-#### 2. Background Service Worker ([background.js](background.js))
-- Manages professor data requests
-- Implements caching with configurable TTL
-- Enforces rate limiting (1 request/second by default)
-- Provides mock data provider for testing
-- Handles message passing with content script
-
-#### 3. Mock Data Provider
-Currently includes sample data for:
-- John Smith (4.2/5, 47 ratings)
-- Sarah Johnson (4.8/5, 92 ratings)
-- Robert Williams (3.5/5, 23 ratings)
-- Emily Davis (4.6/5, 78 ratings)
-
-**To add real RMP data**, replace `MockProvider` in [background.js](background.js:68) with your actual implementation.
-
-## Replacing Mock Data with Real RMP
-
-### TODO: Implement Real Provider
-
-The extension is designed with a provider interface. To add real RateMyProfessors data:
-
-1. **Option A: Use an RMP API** (if available)
-   - Check for official/unofficial RMP APIs
-   - Implement authentication if required
-   - Follow rate limits and terms of service
-
-2. **Option B: Implement search-based lookup**
-   ```javascript
-   const RMPProvider = {
-     async search(normalizedName, school) {
-       // 1. Construct search URL for RMP
-       // 2. Fetch search results
-       // 3. Parse HTML/JSON to find matching professor
-       // 4. Extract rating data
-       // 5. Return in standardized format:
-       return {
-         found: true,
-         data: {
-           name: 'Professor Name',
-           overallRating: 4.5,
-           numRatings: 100,
-           wouldTakeAgainPercent: 85,
-           difficulty: 3.2,
-           rmpUrl: 'https://www.ratemyprofessors.com/...'
-         }
-       };
-     }
-   };
-   ```
-
-3. **Update the active provider** in [background.js](background.js:91):
-   ```javascript
-   const DataProvider = RMPProvider; // Change from MockProvider
-   ```
-
-### Important Considerations
-
-️ **Legal & Ethical**
-- Respect RateMyProfessors' terms of service
-- Do not scrape aggressively (use rate limiting)
-- Consider reaching out to RMP for official API access
-- Comply with robots.txt
-
-️ **Technical**
-- Implement proper error handling
-- Cache aggressively to minimize requests
-- Handle CORS issues (may need background fetch)
-- Test with various name formats and edge cases
-
-## Debug Console Helpers
-
-Open the browser console on any UH page to access these debugging tools:
-
-```javascript
-// Show current configuration
-window.courseMateDebug.showSelectors();
-
-// Test name extraction
-window.courseMateDebug.testName('Smith, John');
-window.courseMateDebug.testName('Sarah Johnson');
-
-// Add a new selector and re-scan
-window.courseMateDebug.addSelector('.your-selector');
-
-// Force re-scan of the page
-window.courseMateDebug.scan();
-
-// Clear all processed elements and re-scan
-window.courseMateDebug.reset();
-```
-
-## Test Checklist
-
-Use this checklist to verify the extension is working correctly:
-
-### Installation
-- [ ] Extension appears in `chrome://extensions/`
-- [ ] No errors shown in extension card
-- [ ] Options page opens when clicking extension icon
-
-### Basic Functionality (Mock Data)
-- [ ] Create a test HTML page with instructor names
-- [ ] Badges appear next to professor names
-- [ ] Loading state shows briefly
-- [ ] Mock professors (Smith, Johnson, Williams, Davis) show ratings
-- [ ] Unknown professors show "?" badge
-- [ ] Clicking badge opens (simulated) RMP page
-
-### Settings Page
-- [ ] Can toggle extension on/off
-- [ ] Can change default school
-- [ ] Can adjust cache duration
-- [ ] Can enable debug mode
-- [ ] "Clear Cache" button works
-- [ ] Settings persist after closing/reopening
-
-### Real UH Pages (After Selector Configuration)
-- [ ] Navigate to UH course catalog/schedule
-- [ ] Badges appear next to instructor names
-- [ ] Console shows detection logs (if debug mode on)
-- [ ] Multiple instructors on same page all get badges
-- [ ] MutationObserver detects dynamically loaded content
-
-### Edge Cases
-- [ ] Handles "Last, First" format
-- [ ] Handles "First Last" format
-- [ ] Handles names with suffixes (Jr., III)
-- [ ] Handles middle initials
-- [ ] Ignores "TBA", "Staff", "Various"
-- [ ] Works with ALL CAPS names
-- [ ] Doesn't duplicate badges on re-scans
-
-### Performance
-- [ ] Page load time not significantly affected
-- [ ] No visible lag when scrolling
-- [ ] Cache reduces repeated requests (check Network tab)
-- [ ] Rate limiting works (check timestamps in debug logs)
-
-## Troubleshooting
-
-### Badges Not Appearing
-
-1. **Check if extension is enabled**
-   - Open settings and verify "Enable Extension" is ON
-
-2. **Verify you're on a UH page**
-   - Extension only runs on `*.uh.edu` domains
-   - Check `manifest.json` to add more domains if needed
-
-3. **Check selectors**
-   - Open console and run `window.courseMateDebug.showSelectors()`
-   - Verify selectors match actual page structure
-   - Use browser Inspector to find correct selectors
-
-4. **Enable debug mode**
-   - Turn on "Debug Mode" in settings
-   - Reload page and check console for detection logs
-
-### Wrong Professors Detected
-
-- The selectors may be too broad
-- Add exclusions in `SELECTORS.excludeElements`
-- Refine name extraction patterns in `extractProfessorName()`
-
-### Badge Styling Issues
-
-- Check for CSS conflicts with page styles
-- Inspect badge element and adjust [ui.css](ui.css)
-- Increase specificity of selectors if needed
-
-### Cache Not Working
-
-- Open `chrome://extensions/` and check for errors
-- Try "Clear Cache" in settings
-- Check browser console for storage errors
-- Verify `chrome.storage.local` permissions in manifest
-
-## Development
-
-### Making Changes
-
-1. Edit files in the extension directory
-2. Go to `chrome://extensions/`
-3. Click refresh icon (↻) on CourseMate card
-4. Reload any open UH pages to see changes
-
-### Testing
-
-```bash
-# Open console on any page and test:
-window.courseMateDebug.testName('Smith, John');  # Should return normalized name
-window.courseMateDebug.scan();  # Force re-scan
-```
-
-### Adding Icons
-
-The extension needs icons in three sizes. Create PNG files:
-
-```bash
-icons/
-├── icon16.png   # 16x16 pixels (toolbar)
-├── icon48.png   # 48x48 pixels (extension management)
-└── icon128.png  # 128x128 pixels (Chrome Web Store)
-```
-
-Recommended: Use a graduation cap, star, or "RMP" text logo with school colors (currently UH).
-
-## Privacy & Permissions
-
-### Data Collection
-- **None** - This extension does NOT collect any personal data
-- All professor ratings are cached locally on your device
-- No data is sent to third-party servers (except RMP when fetching ratings)
-
-### Required Permissions
-
-- **`storage`** - Store cached ratings and settings locally
-- **`activeTab`** - Access current tab to inject badges
-- **`https://*.uh.edu/*`** - Run on supported university course pages (currently UH)
-- **`https://www.ratemyprofessors.com/*`** - Fetch professor ratings (when real provider is implemented)
-
-## Contributing
-
-Contributions welcome! To contribute:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes
-4. Test thoroughly
-5. Commit your changes (`git commit -m 'Add amazing feature'`)
-6. Push to the branch (`git push origin feature/amazing-feature`)
-7. Open a Pull Request
-
-## License
-
-MIT License - see LICENSE file for details
-
-## Disclaimer
-
-This extension is not affiliated with, endorsed by, or connected to:
-- RateMyProfessors.com
-- University of Houston
-- Any UH campus or department
-
-Use at your own discretion. Professor ratings are user-submitted and may not reflect actual teaching quality.
-
-## Support
-
-- **Issues**: [GitHub Issues](https://github.com/yourusername/CourseMate-UH/issues)
-- **Questions**: Open a discussion on GitHub
-- **UH-specific help**: Check selectors for your specific catalog page
 
 ---
 
-Made with care for UH students
+## Settings
 
-**Version**: 1.0.0
-**Last Updated**: 2026-01-06
+Click the CourseMate icon in the Chrome toolbar to open settings:
+
+- **Enable/Disable** — Toggle the extension on or off
+- **Default School** — University to search (auto-detected by hostname in most cases)
+- **Cache Duration** — How long to remember ratings (default: 7 days)
+- **Debug Mode** — Enable detailed console logging
+- **Clear Cache** — Force fresh lookups for all professors
+
+---
+
+## Adding a New School
+
+**If the school uses PeopleSoft or Banner SSB:**
+
+1. Branch from `main`:
+   ```bash
+   git checkout main
+   git checkout -b coursemate-<schoolname>
+   ```
+
+2. Update `manifest.json` — set `host_permissions` and `content_scripts.matches` to the school's domain
+
+3. Update `background.js` — add an entry to `SCHOOL_CONFIGS`:
+   ```js
+   'school.edu': { schoolId: '<base64 RMP school ID>', filter: '<school name lowercase>' }
+   ```
+   To get the RMP school ID: find the school at `ratemyprofessors.com`, note the numeric ID in the URL, then `btoa('School-<id>')`.
+
+4. Update `options.html` — change the school name in the settings page
+
+5. Remove CougarGrades (UH-only): delete `COUGARGRADES_CONFIG` and related functions from `background.js`, and the grade distribution section from `contentScript.js`
+
+**If the school uses a different registration system:**
+Inspect the instructor name element, identify a unique CSS selector, add it to `SELECTORS.instructorElements` in `contentScript.js`, and add lenient name extraction if the system wraps names in known containers.
+
+---
+
+## RMP School IDs (Texas Schools)
+
+| School | RMP URL | Base64 ID |
+|--------|---------|-----------|
+| University of Houston | /school/1109 | `U2Nob29sLTExMDk=` |
+| University of North Texas | /school/1252 | `U2Nob29sLTEyNTI=` |
+| UT San Antonio | /school/1516 | `U2Nob29sLTE1MTY=` |
+| UT Austin | /school/1255 | `U2Nob29sLTEyNTU=` |
+| UT Dallas | /school/1273 | `U2Nob29sLTEyNzM=` |
+| Texas A&M | /school/1003 | `U2Nob29sLTEwMDM=` |
+| Texas Southern | /school/1010 | `U2Nob29sLTEwMTA=` |
+| Texas Tech | /school/1011 | `U2Nob29sLTEwMTE=` |
+| Texas State | /school/938 | `U2Nob29sLTkzOA==` |
+
+---
+
+## Privacy & Permissions
+
+- **No personal data collected** — CourseMate does not track users or collect analytics
+- **Local storage only** — Cached ratings live in `chrome.storage.local` on your device
+- **External requests** — Only to `ratemyprofessors.com` (rating lookups) and `unpkg.com` / `cougargrades.io` (UH branch only, for grade distribution data)
+
+### Permissions used
+
+| Permission | Reason |
+|------------|--------|
+| `storage` | Cache ratings and settings locally |
+| `host_permissions` (school domains) | Run content script on registration pages |
+| `host_permissions` (ratemyprofessors.com) | Fetch professor ratings |
+
+---
+
+## Disclaimer
+
+CourseMate is not affiliated with, endorsed by, or connected to RateMyProfessors.com, University of Houston, or any other university. Professor ratings are user-submitted content from RateMyProfessors and may not reflect actual teaching quality.
+
+---
+
+## Support / Issues
+
+[GitHub Issues](https://github.com/Thenathanb/CourseMate/issues)
+
+---
+
+**Version:** 1.0.0  
+**Last Updated:** June 2026
