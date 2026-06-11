@@ -7,9 +7,9 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 8px;
+  padding: 3px 8px;
   margin-left: 6px;
-  border-radius: 12px;
+  border-radius: 14px;
   font-size: 12px;
   font-weight: 600;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
@@ -37,15 +37,16 @@
 
 /* Found state - with rating */
 .coursemate-badge.coursemate-found {
-  background-color: #f8f9fa;
-  border: 1px solid #dee2e6;
-  color: #212529;
+  background-color: #263846;
+  border: 1px solid #344b5d;
+  color: #f8fafc;
   cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
 }
 
 .coursemate-badge.coursemate-found:hover {
-  background-color: #e9ecef;
-  border-color: #adb5bd;
+  background-color: #31485a;
+  border-color: #456276;
   transform: translateY(-1px);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
@@ -77,9 +78,14 @@
 }
 
 .coursemate-badge .rating-count {
-  color: #6c757d;
+  color: #cbd5e1;
   font-size: 11px;
   font-weight: 500;
+}
+
+td[data-property="linked"] .coursemate-badge,
+.results-linked .coursemate-badge {
+  margin-left: 0;
 }
 
 /* Not found state */

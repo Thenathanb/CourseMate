@@ -99,6 +99,9 @@ const SCHOOL_CONFIGS = {
   'utexas.edu':   { schoolId: 'U2Nob29sLTEyNTU=',  filter: 'university of texas at austin' },
   'utdallas.edu':              { schoolId: 'U2Nob29sLTEyNzM=', filter: 'university of texas at dallas' },
   'utdallas.collegescheduler.com': { schoolId: 'U2Nob29sLTEyNzM=', filter: 'university of texas at dallas' },
+  'txstate.edu':                    { schoolId: 'U2Nob29sLTkzOA==', filter: 'texas state university' },
+  'ec.txstate.edu':                 { schoolId: 'U2Nob29sLTkzOA==', filter: 'texas state university' },
+  'txstate.collegescheduler.com':   { schoolId: 'U2Nob29sLTkzOA==', filter: 'texas state university' },
 };
 
 function getSchoolConfig(hostname) {
@@ -233,10 +236,14 @@ const RMPProvider = {
       }
     }
 
-    // Narrow to professors whose last name matches
-    const lastMatches = professors.filter(edge =>
-      edge.node.lastName.toLowerCase() === expLast
-    );
+    // Narrow to professors whose last name matches exactly OR whose hyphenated
+    // last name starts with the searched last name (e.g. "Douglas" matches "Douglas-Butler").
+    const lastMatches = professors.filter(edge => {
+      const rmpLast = edge.node.lastName.toLowerCase().trim();
+      return rmpLast === expLast ||
+             rmpLast.startsWith(expLast + '-') ||
+             rmpLast.startsWith(expLast + ' ');
+    });
 
     if (lastMatches.length === 0) return null;
 
@@ -247,8 +254,11 @@ const RMPProvider = {
     const scored = lastMatches.map(edge => {
       const prof = edge.node;
       const profFirst = prof.firstName.toLowerCase();
+      const profLast = prof.lastName.toLowerCase().trim();
       let score = 0;
       if (profFirst.startsWith(expFirst) || expFirst.startsWith(profFirst)) score += 4;
+      // Exact last name match scores higher than hyphenated-extension match
+      if (profLast === expLast) score += 2;
       score += this._deptScore(prof.department, subject);
       return { prof, score };
     });
@@ -286,13 +296,26 @@ const RMPProvider = {
       // Fallback: search without school ID for professors whose RMP profile
       // is still listed under a previous school (e.g. transferred from Collin College to UNT).
       // Use strict exact-name matching only to avoid false positives across schools.
+      // Prefer matches from the correct school (filter), skip matches from unrelated schools.
       if (!PRODUCTION_MODE) console.log(`[RMP API] Attempt 3 — cross-school fallback for: "${lastName}"`);
       const fallbackByLast = await this._queryRMP(lastName, null, null);
+      // First try to find an exact match at the correct school
+      const exactByLastSameSchool = this._findExactMatch(
+        filter ? fallbackByLast.filter(e => (e.node.school?.name || '').toLowerCase().includes(filter)) : fallbackByLast,
+        firstName, lastName
+      );
+      if (exactByLastSameSchool) return exactByLastSameSchool;
+      // Then try any school (for professors whose RMP profile is under a prior institution)
       const exactByLast = this._findExactMatch(fallbackByLast, firstName, lastName);
       if (exactByLast) return exactByLast;
 
       if (firstName && firstName.toLowerCase() !== lastName.toLowerCase()) {
         const fallbackByFirst = await this._queryRMP(firstName, null, null);
+        const exactByFirstSameSchool = this._findExactMatch(
+          filter ? fallbackByFirst.filter(e => (e.node.school?.name || '').toLowerCase().includes(filter)) : fallbackByFirst,
+          lastName, firstName
+        );
+        if (exactByFirstSameSchool) return exactByFirstSameSchool;
         const exactByFirst = this._findExactMatch(fallbackByFirst, lastName, firstName);
         if (exactByFirst) return exactByFirst;
       }
@@ -471,7 +494,7 @@ async function fetchProfessorData(professorName, school = 'uh.edu', courseInfo =
       return { error: 'Invalid professor name' };
     }
 
-    const normalizedName = normalizeName(professorName, 'uh');
+    const normalizedName = normalizeName(professorName, school);
     await logDebug(`Fetching data for: ${professorName} (${firstName} ${lastName})`);
 
     // Check cache first
