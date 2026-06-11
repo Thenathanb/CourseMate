@@ -3,7 +3,7 @@
   "name": "CourseMate (Test)",
   "short_name": "CourseMate",
   "version": "1.0.0",
-  "description": "Test build: RateMyProfessors ratings on course registration pages for UH, UNT, UTSA, UT Austin, UT Dallas, Texas State, and CollegeScheduler.",
+  "description": "Test build: RateMyProfessors ratings on course registration pages for UH, UNT, UTSA, UT Austin, UT Dallas, Texas Southern, Texas State, Texas A&M, and CollegeScheduler.",
   "permissions": [
     "storage"
   ],
@@ -14,10 +14,14 @@
     "https://*.utexas.edu/*",
     "https://*.utdallas.edu/*",
     "https://utdallas.collegescheduler.com/*",
+    "https://*.tsu.edu/*",
+    "https://*.ec.tsu.edu/*",
+    "https://reg-prod.ec.tsu.edu/*",
     "https://*.txstate.edu/*",
     "https://*.ec.txstate.edu/*",
     "https://reg-prod.ec.txstate.edu/*",
     "https://txstate.collegescheduler.com/*",
+    "https://tamu.collegescheduler.com/*",
     "https://www.ratemyprofessors.com/*",
     "https://cougargrades.io/*",
     "https://unpkg.com/*"
@@ -34,10 +38,14 @@
         "https://*.utexas.edu/*",
         "https://*.utdallas.edu/*",
         "https://utdallas.collegescheduler.com/*",
+        "https://*.tsu.edu/*",
+        "https://*.ec.tsu.edu/*",
+        "https://reg-prod.ec.tsu.edu/*",
         "https://*.txstate.edu/*",
         "https://*.ec.txstate.edu/*",
         "https://reg-prod.ec.txstate.edu/*",
-        "https://txstate.collegescheduler.com/*"
+        "https://txstate.collegescheduler.com/*",
+        "https://tamu.collegescheduler.com/*"
       ],
       "js": ["contentScript.js"],
       "css": ["ui.css"],
