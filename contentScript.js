@@ -12,21 +12,23 @@ const SELECTORS = {
   // - Elements within course listings
 
   instructorElements: [
-    // UH-specific selectors (PeopleSoft system)
-    'span.ps_box-value[id*="SSR_INSTR_LONG"]',  // Most specific - targets instructor fields
+    // PeopleSoft (UH, UNT, UT Austin, UTD native)
+    'span.ps_box-value[id*="SSR_INSTR_LONG"]',
 
-    // Generic selectors (fallback for other pages)
-    '.instructor-name',          // Class-based selector
+    // Ellucian Banner Self-Service (UTSA)
+    'td[data-property="instructor"] a.email',
+    'td[data-property="instructor"] a[href^="mailto:"]',
+
+    // CollegeScheduler (UTD via collegescheduler.com) — first child span only
+    '[id^="instructor-option-"] > span:first-child',
+
+    // Generic fallbacks
+    '.instructor-name',
     '.faculty-name',
-    '[data-instructor]',         // Data attribute selector
-    'td.instructor',             // Table cell with class
+    '[data-instructor]',
+    'td.instructor',
     '.course-instructor',
-    'span[title*="Instructor"]', // Attribute contains
-
-    // Generic fallback (be careful with these - they may match too much)
-    // Uncomment and test carefully:
-    // 'td:nth-child(4)',        // If instructors are always in 4th column
-    // '.schedule-row .instructor'
+    'span[title*="Instructor"]',
   ],
 
   // Elements to exclude (navigation, headers, etc.)
@@ -40,7 +42,7 @@ const SELECTORS = {
 };
 
 // Track processed elements to avoid duplicates
-const processedElements = new WeakSet();
+let processedElements = new WeakSet();
 
 // Track active badges
 const activeBadges = new Map();
@@ -56,6 +58,33 @@ const hoverState = {
  * Extract professor name from element
  */
 function extractProfessorName(element) {
+  // Banner SSB / CollegeScheduler — trust the element contents are a professor name.
+  // Strip role markers and accept without strict pattern validation so that
+  // hyphenated names, compound surnames (De La Cruz), multi-word names, etc. all work.
+  const isBannerSsb = !!element.closest('td[data-property="instructor"]');
+  const isCollegeScheduler = !!element.closest('[id^="instructor-option-"]');
+  if (isBannerSsb || isCollegeScheduler) {
+    const source = element.tagName === 'A'
+      ? element
+      : element.querySelector('a[title], a[aria-label], a[href^="mailto:"], a.email, a');
+    const rawText =
+      source?.getAttribute('title') ||
+      source?.getAttribute('aria-label') ||
+      element.getAttribute('title') ||
+      element.getAttribute('aria-label') ||
+      source?.textContent ||
+      element.textContent;
+    let text = rawText
+      .replace(/\s*\((Primary|Secondary|Co-Instructor|Teaching Assistant)\)\s*/gi, '')
+      .replace(/\.{3,}|…/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!text || text.length < 3) return null;
+    if (/^(TBA|TBD|Staff|Various|Multiple|Online)$/i.test(text)) return null;
+    if (/^\d+$/.test(text)) return null;
+    return text;
+  }
+
   let text = element.textContent.trim();
 
   // Skip empty or very short text
@@ -64,26 +93,21 @@ function extractProfessorName(element) {
   // Skip common non-name patterns
   const skipPatterns = [
     /^(TBA|TBD|Staff|Various|Multiple|Online)$/i,
-    /^\d+$/,  // Just numbers
-    /^[A-Z]{2,5}\s*\d{4}$/,  // Course codes like "CS 1234"
+    /^\d+$/,
+    /^[A-Z]{2,5}\s*\d{4}$/,
   ];
-
   for (const pattern of skipPatterns) {
     if (pattern.test(text)) return null;
   }
 
-  // Look for name patterns
-  // Matches: "Last, First", "First Last", "First M. Last"
+  // PeopleSoft / generic selectors — stricter validation
   const namePatterns = [
-    /^([A-Z][a-z]+),\s*([A-Z][a-z]+)/,  // Last, First
-    /^([A-Z][a-z]+)\s+([A-Z]\.?\s+)?([A-Z][a-z]+)$/,  // First M. Last or First Last
-    /^([A-Z\s]+),\s*([A-Z\s]+)$/  // ALL CAPS: LAST, FIRST
+    /^([A-Z][a-zA-Z'\-]+),\s*([A-Z])/,       // Last, First (allows hyphens, apostrophes)
+    /^([A-Z][a-zA-Z'\-]+)\s+([A-Z]\.?\s+)?([A-Z][a-zA-Z'\-]+)$/, // First [M.] Last
+    /^([A-Z][A-Z'\-\s]+),\s*([A-Z][A-Z'\-\s]+)$/  // ALL CAPS: LAST, FIRST
   ];
-
   for (const pattern of namePatterns) {
-    if (pattern.test(text)) {
-      return text;
-    }
+    if (pattern.test(text)) return text;
   }
 
   return null;
@@ -93,25 +117,28 @@ function extractProfessorName(element) {
  * Try to find a course code near the instructor element
  */
 function findCourseInfo(element) {
-  const coursePattern = /\b([A-Z]{2,4})\s*([0-9]{4})\b/;
   const container = element.closest('tr') || element.closest('[role="row"]') || element.parentElement;
+  if (!container) return null;
 
-  if (!container) {
-    return null;
+  // Banner SSB: subject and course number are in dedicated data-property cells
+  const subjectCell = container.querySelector('td[data-property="subject"]');
+  const courseNumberCell = container.querySelector('td[data-property="courseNumber"]');
+  if (subjectCell && courseNumberCell) {
+    const subject = (subjectCell.getAttribute('title') || subjectCell.textContent).trim().toUpperCase();
+    const catalog = (courseNumberCell.getAttribute('title') || courseNumberCell.textContent).trim();
+    if (subject && catalog) {
+      return { subject, catalog, display: `${subject} ${catalog}` };
+    }
   }
 
+  // PeopleSoft: scan row text for a course code pattern
+  const coursePattern = /\b([A-Z]{2,4})\s*([0-9]{4})\b/;
   const match = container.textContent.match(coursePattern);
-  if (!match) {
-    return null;
-  }
+  if (!match) return null;
 
   const subject = match[1].toUpperCase();
   const catalog = match[2];
-  return {
-    subject,
-    catalog,
-    display: `${subject} ${catalog}`
-  };
+  return { subject, catalog, display: `${subject} ${catalog}` };
 }
 
 function findSectionContainer(element) {
@@ -130,11 +157,17 @@ function findSectionContainer(element) {
 }
 
 function isLabSection(element) {
-  const container = findSectionContainer(element);
-  if (!container) {
-    return false;
+  // Banner SSB: check the explicit scheduleType cell
+  const row = element.closest('tr');
+  const scheduleTypeCell = row && row.querySelector('td[data-property="scheduleType"]');
+  if (scheduleTypeCell) {
+    const type = (scheduleTypeCell.getAttribute('title') || scheduleTypeCell.textContent).toUpperCase();
+    return /\bLAB\b|\bLABORATORY\b/.test(type) && !/\bLECTURE\b/.test(type);
   }
 
+  // PeopleSoft: scan section container text
+  const container = findSectionContainer(element);
+  if (!container) return false;
   const text = container.textContent.toUpperCase();
   const hasLab = /\bLAB\b|\bLABORATORY\b/.test(text);
   const hasLecture = /\bLEC\b|\bLECTURE\b/.test(text);
@@ -278,33 +311,14 @@ function renderTooltipContent({ professorName, baseData, hoverData, courseInfo, 
   const difficulty = baseData?.difficulty !== undefined ? baseData.difficulty.toFixed(1) : 'N/A';
   const wouldTakeAgain = baseData?.wouldTakeAgainPercent !== undefined ? `${baseData.wouldTakeAgainPercent}%` : 'N/A';
   const rmpUrl = baseData?.rmpUrl;
-  const cougarGradesUrl = hoverData?.cougarGradesUrl;
-  const gradeData = hoverData?.gradeDistribution;
   const reviews = hoverData?.reviews || [];
   const isLoading = loading && !hoverData;
-
-  const gradeRows = isLoading
-    ? '<div class="coursemate-tooltip-loading">Loading grade data...</div>'
-    : gradeData?.percentages ? ['A', 'B', 'C', 'D', 'F'].map(letter => {
-      const value = gradeData.percentages[letter] ?? 0;
-      return `
-        <div class="coursemate-grade-row">
-          <div class="coursemate-grade-label">${letter}</div>
-          <div class="coursemate-grade-bar">
-            <div class="coursemate-grade-bar-fill" style="width: ${value}%"></div>
-          </div>
-          <div class="coursemate-grade-value">${value}%</div>
-        </div>
-      `;
-    }).join('') : `<div class="coursemate-tooltip-loading">${courseInfo ? 'Grade data unavailable.' : 'Course not detected on page.'}</div>`;
 
   const reviewsHtml = isLoading
     ? '<div class="coursemate-tooltip-loading">Loading reviews...</div>'
     : reviews.length > 0 ? reviews.map(review => `
       <div class="coursemate-review">"${escapeHtml(truncateText(review.comment || '', 160))}"</div>
     `).join('') : '<div class="coursemate-tooltip-loading">No recent reviews found.</div>';
-
-  const courseLabel = gradeData?.course || courseInfo?.display;
 
   tooltip.innerHTML = `
     <div class="coursemate-tooltip-header">
@@ -313,18 +327,11 @@ function renderTooltipContent({ professorName, baseData, hoverData, courseInfo, 
     </div>
     <div class="coursemate-tooltip-subheader">Difficulty: ${difficulty} | ${wouldTakeAgain} Would Take Again</div>
     <div class="coursemate-tooltip-section">
-      <div class="coursemate-tooltip-section-title">Grade Distribution${courseLabel ? ` (${escapeHtml(courseLabel)})` : ''}</div>
-      ${gradeRows}
-      ${gradeData?.gpa !== undefined ? `<div class="coursemate-grade-gpa">Avg GPA: ${gradeData.gpa.toFixed(2)}</div>` : ''}
-      ${gradeData?.partial ? '<div class="coursemate-grade-gpa">Partial data (timed out)</div>' : ''}
-    </div>
-    <div class="coursemate-tooltip-section">
       <div class="coursemate-tooltip-section-title">Recent Reviews</div>
       ${reviewsHtml}
     </div>
     <div class="coursemate-tooltip-footer">
       ${rmpUrl ? `<a class="coursemate-tooltip-link" href="${rmpUrl}" target="_blank" rel="noreferrer">View on RMP -></a>` : '<span></span>'}
-      ${cougarGradesUrl ? `<a class="coursemate-tooltip-link" href="${cougarGradesUrl}" target="_blank" rel="noreferrer">CougarGrades -></a>` : '<span></span>'}
     </div>
   `;
 
@@ -396,6 +403,9 @@ async function showTooltipForBadge(badge, baseData, context) {
  * Check if element should be excluded
  */
 function shouldExclude(element) {
+  // Never process an element that is (or lives inside) a badge we already inserted
+  if (element.closest('.coursemate-badge')) return true;
+
   // Check if element or any parent matches exclude selectors
   for (const selector of SELECTORS.excludeElements) {
     if (element.closest(selector)) {
@@ -429,8 +439,12 @@ function createRatingBadge(data, context) {
   const badge = document.createElement('span');
   badge.className = 'coursemate-badge coursemate-found';
 
-  const rating = data.overallRating.toFixed(1);
-  const ratingClass = rating >= 4.0 ? 'rating-high' : rating >= 3.0 ? 'rating-medium' : 'rating-low';
+  const hasRatings = data.numRatings > 0 && data.overallRating > 0;
+  const rating = hasRatings ? data.overallRating.toFixed(1) : 'N/A';
+  const ratingClass = !hasRatings ? 'rating-none'
+    : rating >= 4.0 ? 'rating-high'
+    : rating >= 3.0 ? 'rating-medium'
+    : 'rating-low';
 
   badge.innerHTML = `
     <span class="rating ${ratingClass}">${rating}</span>
@@ -471,11 +485,17 @@ function createRatingBadge(data, context) {
   };
 
   activeBadges.set(badge, { baseData: data, context: badgeContext });
-  badge.addEventListener('mouseenter', () => {
+
+  function triggerTooltip() {
     const state = activeBadges.get(badge);
-    if (state) {
-      showTooltipForBadge(badge, state.baseData, state.context);
-    }
+    if (state) showTooltipForBadge(badge, state.baseData, state.context);
+  }
+
+  badge.addEventListener('mouseenter', triggerTooltip);
+  badge.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    triggerTooltip();
   });
   badge.addEventListener('mouseleave', () => {
     scheduleHideTooltip();
@@ -485,13 +505,41 @@ function createRatingBadge(data, context) {
 }
 
 /**
- * Create "not found" badge
+ * Create "not found" badge with hover tooltip linking to add a rating
  */
-function createNotFoundBadge() {
+function createNotFoundBadge(professorName) {
   const badge = document.createElement('span');
   badge.className = 'coursemate-badge coursemate-not-found';
   badge.textContent = '?';
-  badge.title = 'No ratings found on RateMyProfessors';
+  badge.style.cursor = 'pointer';
+
+  function showNotFoundTooltip() {
+    if (hoverState.hideTimeout) clearTimeout(hoverState.hideTimeout);
+    hoverState.activeBadge = badge;
+    const tooltip = ensureTooltip();
+    tooltip.innerHTML = `
+      <div class="coursemate-tooltip-header">
+        <div class="coursemate-tooltip-name">${escapeHtml(professorName || 'Professor')}</div>
+      </div>
+      <div class="coursemate-tooltip-section">
+        <div class="coursemate-tooltip-loading">No RMP rating found for this professor.</div>
+      </div>
+      <div class="coursemate-tooltip-footer">
+        <a class="coursemate-tooltip-link" href="https://www.ratemyprofessors.com/add/professor" target="_blank" rel="noreferrer">Rate this professor -></a>
+      </div>
+    `;
+    tooltip.classList.add('show');
+    positionTooltip(badge);
+  }
+
+  badge.addEventListener('mouseenter', showNotFoundTooltip);
+  badge.addEventListener('mouseleave', () => scheduleHideTooltip());
+  badge.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    showNotFoundTooltip();
+  });
+
   return badge;
 }
 
@@ -510,17 +558,114 @@ function createErrorBadge(message) {
  * Insert badge next to professor name
  */
 function insertBadge(element, badge) {
-  // Check if badge already exists
+  // Anchor tag (Banner SSB with an instructor link): insert badge as sibling after the anchor
+  if (element.tagName === 'A') {
+    const next = element.nextElementSibling;
+    if (next && next.classList.contains('coursemate-badge')) {
+      activeBadges.delete(next);
+      next.replaceWith(badge);
+    } else {
+      element.insertAdjacentElement('afterend', badge);
+    }
+    return;
+  }
+
+  // TD cell (Banner SSB plain-text instructor, no email link):
+  // insert badge after any anchor inside, or prepend to cell content
+  if (element.tagName === 'TD') {
+    const existingBadge = element.querySelector('.coursemate-badge');
+    if (existingBadge) {
+      activeBadges.delete(existingBadge);
+      existingBadge.replaceWith(badge);
+    } else {
+      const anchor = element.querySelector('a[href^="mailto:"], a.email');
+      if (anchor) {
+        anchor.insertAdjacentElement('afterend', badge);
+      } else {
+        element.insertAdjacentElement('afterbegin', badge);
+      }
+    }
+    return;
+  }
+
+  // CollegeScheduler: span inside role="option" — insert after the span as a sibling
+  if (element.tagName === 'SPAN' && element.parentElement?.getAttribute('role') === 'option') {
+    const next = element.nextElementSibling;
+    if (next && next.classList.contains('coursemate-badge')) {
+      activeBadges.delete(next);
+      next.replaceWith(badge);
+    } else {
+      element.insertAdjacentElement('afterend', badge);
+    }
+    return;
+  }
+
+  // PeopleSoft span / other elements: append badge inside the element
   const existingBadge = element.querySelector('.coursemate-badge');
   if (existingBadge) {
     activeBadges.delete(existingBadge);
     existingBadge.replaceWith(badge);
   } else {
-    // Insert badge after the text content
-    element.style.position = 'relative';
     element.appendChild(document.createTextNode(' '));
     element.appendChild(badge);
   }
+}
+
+// Returns the .results-linked div in the Banner SSB linked column of the same row.
+function getBannerLinkedDiv(element) {
+  const row = element.closest('tr');
+  if (!row) return null;
+  const cell = row.querySelector('td[data-property="linked"]');
+  if (!cell) return null;
+  return cell.querySelector('.results-linked') || cell;
+}
+
+// Place a badge inside the linked column, replacing any prior badge there.
+function insertLinkedBadge(linkedDiv, badge) {
+  if (!linkedDiv) return;
+  const existing = linkedDiv.querySelector('.coursemate-badge');
+  if (existing) { activeBadges.delete(existing); existing.replaceWith(badge); }
+  else { linkedDiv.appendChild(badge); }
+}
+
+function getBannerBadgeContainer(element) {
+  return getBannerLinkedDiv(element);
+}
+
+function insertProfessorBadge(element, badge) {
+  const bannerContainer = getBannerBadgeContainer(element);
+  if (bannerContainer) {
+    insertLinkedBadge(bannerContainer, badge);
+    return;
+  }
+
+  insertBadge(element, badge);
+}
+
+// Remove any CourseMate badge inserted next to element (used when no rating found)
+function removeBadge(element) {
+  const bannerContainer = getBannerBadgeContainer(element);
+  if (bannerContainer) {
+    const badge = bannerContainer.querySelector('.coursemate-badge');
+    if (badge) { activeBadges.delete(badge); badge.remove(); }
+    return;
+  }
+
+  if (element.tagName === 'A' || (element.tagName === 'SPAN' && element.parentElement?.getAttribute('role') === 'option')) {
+    const next = element.nextElementSibling;
+    if (next && next.classList.contains('coursemate-badge')) {
+      activeBadges.delete(next);
+      next.remove();
+    }
+    return;
+  }
+  if (element.tagName === 'TD') {
+    const badge = element.querySelector('.coursemate-badge');
+    if (badge) { activeBadges.delete(badge); badge.remove(); }
+    return;
+  }
+  const badge = element.querySelector('.coursemate-badge');
+  if (badge) { activeBadges.delete(badge); badge.remove(); }
 }
 
 /**
@@ -550,38 +695,44 @@ async function processProfessorElement(element) {
     console.log(`[CourseMate] Matched course: ${courseInfo.display}`);
   }
 
-  // Insert loading badge
   const loadingBadge = createLoadingBadge();
-  insertBadge(element, loadingBadge);
+  insertProfessorBadge(element, loadingBadge);
+
+  // Extension context invalidated (e.g. extension reloaded while tab was open)
+  if (!chrome?.runtime?.sendMessage) {
+    removeBadge(element);
+    processedElements.delete(element);
+    return;
+  }
 
   try {
-    // Request data from background script
     const response = await chrome.runtime.sendMessage({
       action: 'getProfessorData',
       professorName: professorName,
-      school: 'University of Houston'
+      school: window.location.hostname,
+      courseInfo: courseInfo
     });
 
-    let finalBadge;
-
-    if (response.error) {
-      finalBadge = createErrorBadge(response.error);
-    } else if (response.found && response.data) {
-      finalBadge = createRatingBadge(response.data, {
-        professorName,
-        courseInfo
-      });
-    } else {
-      finalBadge = createNotFoundBadge();
+    // Service worker sleeping — remove loading badge and retry on next rescan
+    if (!response) {
+      processedElements.delete(element);
+      removeBadge(element);
+      return;
     }
 
-    // Replace loading badge with final badge
-    insertBadge(element, finalBadge);
+    if (response.found && response.data) {
+      // Has a rating — show the rating badge
+      insertProfessorBadge(element, createRatingBadge(response.data, { professorName, courseInfo }));
+    } else {
+      // Confirmed not on RMP — show ? so student can add a rating
+      insertProfessorBadge(element, createNotFoundBadge(professorName));
+    }
 
   } catch (error) {
+    // Unknown error — silently retry rather than show a misleading badge
     console.error('[CourseMate] Error processing professor:', error);
-    const errorBadge = createErrorBadge(error.message);
-    insertBadge(element, errorBadge);
+    removeBadge(element);
+    processedElements.delete(element);
   }
 }
 
@@ -591,14 +742,30 @@ async function processProfessorElement(element) {
 function scanPage() {
   console.log('[CourseMate] Scanning page for professors...');
 
+  // Banner SSB: process every instructor cell directly.
+  // Each cell may contain an <a mailto> link or plain text (no email on file).
+  // We use the anchor when present for clean text and precise badge placement,
+  // otherwise fall back to the <td> itself.
+  const bannerCells = document.querySelectorAll('td[data-property="instructor"]');
+  if (bannerCells.length > 0) {
+    console.log(`[CourseMate] Found ${bannerCells.length} Banner SSB instructor cells`);
+    bannerCells.forEach(cell => {
+      const anchor = cell.querySelector('a[href^="mailto:"], a.email');
+      const target = anchor || cell;
+      processProfessorElement(target);
+    });
+  }
+
+  // PeopleSoft and generic selectors
   for (const selector of SELECTORS.instructorElements) {
+    // Skip Banner SSB selectors — handled above
+    if (selector.includes('data-property="instructor"')) continue;
     try {
       const elements = document.querySelectorAll(selector);
-      console.log(`[CourseMate] Found ${elements.length} elements matching "${selector}"`);
-
-      elements.forEach(element => {
-        processProfessorElement(element);
-      });
+      if (elements.length > 0) {
+        console.log(`[CourseMate] Found ${elements.length} elements matching "${selector}"`);
+        elements.forEach(element => processProfessorElement(element));
+      }
     } catch (error) {
       console.error(`[CourseMate] Error with selector "${selector}":`, error);
     }
@@ -614,7 +781,6 @@ function initMutationObserver() {
 
     for (const mutation of mutations) {
       if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
-        // Check if any added nodes might contain instructor info
         for (const node of mutation.addedNodes) {
           if (node.nodeType === Node.ELEMENT_NODE) {
             shouldScan = true;
@@ -622,23 +788,43 @@ function initMutationObserver() {
           }
         }
       }
+      // Banner SSB reveals results by removing display:none — catch style/class changes
+      // on any element (not just TR/TD/TBODY) since some schools toggle a parent div
+      if (mutation.type === 'attributes' && mutation.target.nodeType === Node.ELEMENT_NODE) {
+        shouldScan = true;
+      }
+      if (shouldScan) break;
     }
 
     if (shouldScan) {
-      console.log('[CourseMate] DOM changed, re-scanning...');
-      // Debounce scanning
       clearTimeout(window.courseMateScanTimeout);
-      window.courseMateScanTimeout = setTimeout(scanPage, 500);
+      window.courseMateScanTimeout = setTimeout(scanPage, 800);
     }
   });
 
-  // Observe the entire document body
   observer.observe(document.body, {
     childList: true,
-    subtree: true
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['style', 'class']
   });
 
   console.log('[CourseMate] MutationObserver initialized');
+}
+
+// Banner SSB / CollegeScheduler: listen for clicks that trigger dynamic content loads
+function initBannerSsbSearchListener() {
+  document.addEventListener('click', (e) => {
+    // Banner SSB search buttons
+    const isBannerSearch = !!e.target.closest('button, input[type="submit"], a[id*="search"], a[class*="search"]');
+    // CollegeScheduler instructor dropdown trigger (any click that could open it)
+    const isCollegeSchedulerTrigger = !!e.target.closest('[class*="dropdown"], [class*="filter"], [class*="instructor"]');
+
+    if (isBannerSearch || isCollegeSchedulerTrigger) {
+      setTimeout(scanPage, 800);
+      setTimeout(scanPage, 2000);
+    }
+  }, true);
 }
 
 /**
@@ -658,6 +844,9 @@ function init() {
 
   // Watch for dynamic changes
   initMutationObserver();
+
+  // Extra fallback for Banner SSB (Ellucian) search results
+  initBannerSsbSearchListener();
 
   // Re-scan when page visibility changes (in case content loaded while tab was hidden)
   document.addEventListener('visibilitychange', () => {
@@ -710,7 +899,7 @@ window.courseMateDebug = {
 
   // Clear processed cache and re-scan
   reset: () => {
-    processedElements.clear();
+    processedElements = new WeakSet();
     activeBadges.clear();
     // Remove existing badges
     document.querySelectorAll('.coursemate-badge').forEach(b => b.remove());

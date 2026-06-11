@@ -1,15 +1,15 @@
 /**
- * CourseMate UH UI Styles
+ * CourseMate UI Styles
  * Badge styling for professor ratings
  */
 
-.prof-peek-badge {
+.coursemate-badge {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 8px;
+  padding: 3px 8px;
   margin-left: 6px;
-  border-radius: 12px;
+  border-radius: 14px;
   font-size: 12px;
   font-weight: 600;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
@@ -20,7 +20,7 @@
 }
 
 /* Loading state */
-.prof-peek-badge.prof-peek-loading {
+.coursemate-badge.coursemate-loading {
   background-color: #e0e0e0;
   color: #666;
   animation: pulse 1.5s ease-in-out infinite;
@@ -36,138 +36,148 @@
 }
 
 /* Found state - with rating */
-.prof-peek-badge.prof-peek-found {
-  background-color: #f8f9fa;
-  border: 1px solid #dee2e6;
-  color: #212529;
+.coursemate-badge.coursemate-found {
+  background-color: #263846;
+  border: 1px solid #344b5d;
+  color: #f8fafc;
   cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
 }
 
-.prof-peek-badge.prof-peek-found:hover {
-  background-color: #e9ecef;
-  border-color: #adb5bd;
+.coursemate-badge.coursemate-found:hover {
+  background-color: #31485a;
+  border-color: #456276;
   transform: translateY(-1px);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-.prof-peek-badge.prof-peek-found:active {
+.coursemate-badge.coursemate-found:active {
   transform: translateY(0);
 }
 
 /* Rating number styling */
-.prof-peek-badge .rating {
+.coursemate-badge .rating {
   font-weight: 700;
   font-size: 13px;
 }
 
-.prof-peek-badge .rating.rating-high {
+.coursemate-badge .rating.rating-high {
   color: #28a745;  /* Green for high ratings (4.0+) */
 }
 
-.prof-peek-badge .rating.rating-medium {
+.coursemate-badge .rating.rating-medium {
   color: #ffc107;  /* Yellow for medium ratings (3.0-3.9) */
 }
 
-.prof-peek-badge .rating.rating-low {
+.coursemate-badge .rating.rating-low {
   color: #dc3545;  /* Red for low ratings (<3.0) */
 }
 
-.prof-peek-badge .rating-count {
-  color: #6c757d;
+.coursemate-badge .rating.rating-none {
+  color: #6c757d;  /* Grey for no ratings yet */
+}
+
+.coursemate-badge .rating-count {
+  color: #cbd5e1;
   font-size: 11px;
   font-weight: 500;
 }
 
+td[data-property="linked"] .coursemate-badge,
+.results-linked .coursemate-badge {
+  margin-left: 0;
+}
+
 /* Not found state */
-.prof-peek-badge.prof-peek-not-found {
+.coursemate-badge.coursemate-not-found {
   background-color: #f8f9fa;
   border: 1px solid #dee2e6;
   color: #6c757d;
   cursor: help;
 }
 
-.prof-peek-badge.prof-peek-not-found:hover {
+.coursemate-badge.coursemate-not-found:hover {
   background-color: #e9ecef;
 }
 
 /* Error state */
-.prof-peek-badge.prof-peek-error {
+.coursemate-badge.coursemate-error {
   background-color: #fff3cd;
   border: 1px solid #ffc107;
   color: #856404;
   cursor: help;
 }
 
-.prof-peek-badge.prof-peek-error:hover {
+.coursemate-badge.coursemate-error:hover {
   background-color: #ffe69c;
 }
 
 /* Tooltip enhancement (uses browser default but adds styling) */
-.prof-peek-badge[title] {
+.coursemate-badge[title] {
   position: relative;
 }
 
 /* Responsive adjustments */
 @media (max-width: 768px) {
-  .prof-peek-badge {
+  .coursemate-badge {
     font-size: 11px;
     padding: 2px 6px;
     margin-left: 4px;
   }
 
-  .prof-peek-badge .rating {
+  .coursemate-badge .rating {
     font-size: 12px;
   }
 
-  .prof-peek-badge .rating-count {
+  .coursemate-badge .rating-count {
     font-size: 10px;
   }
 }
 
 /* Print styles - hide badges when printing */
 @media print {
-  .prof-peek-badge {
+  .coursemate-badge {
     display: none;
   }
 }
 
 /* Accessibility - ensure badges are keyboard accessible when clickable */
-.prof-peek-badge.prof-peek-found:focus {
+.coursemate-badge.coursemate-found:focus {
   outline: 2px solid #0066cc;
   outline-offset: 2px;
 }
 
 /* Dark mode support (if the page uses dark mode) */
 @media (prefers-color-scheme: dark) {
-  .prof-peek-badge.prof-peek-found {
+  .coursemate-badge.coursemate-found {
     background-color: #2d3748;
     border-color: #4a5568;
     color: #e2e8f0;
   }
 
-  .prof-peek-badge.prof-peek-found:hover {
+  .coursemate-badge.coursemate-found:hover {
     background-color: #4a5568;
     border-color: #718096;
   }
 
-  .prof-peek-badge.prof-peek-loading {
+  .coursemate-badge.coursemate-loading {
     background-color: #4a5568;
     color: #cbd5e0;
   }
 
-  .prof-peek-badge.prof-peek-not-found {
+  .coursemate-badge.coursemate-not-found {
     background-color: #2d3748;
     border-color: #4a5568;
     color: #a0aec0;
   }
 
-  .prof-peek-badge .rating-count {
+  .coursemate-badge .rating-count {
     color: #a0aec0;
   }
 }
 
 /* Animation for when badges appear */
-.prof-peek-badge {
+.coursemate-badge {
   animation: slideIn 0.3s ease-out;
 }
 
@@ -179,5 +189,166 @@
   to {
     opacity: 1;
     transform: translateX(0);
+  }
+}
+
+/* Hover tooltip */
+.coursemate-tooltip {
+  position: fixed;
+  z-index: 9999;
+  width: 340px;
+  max-width: calc(100vw - 24px);
+  background: #ffffff;
+  border: 1px solid #e1e5ea;
+  border-radius: 12px;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.15);
+  padding: 12px 14px;
+  color: #1f2933;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
+  font-size: 12px;
+  line-height: 1.4;
+  opacity: 0;
+  transform: translateY(6px);
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.coursemate-tooltip.show {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.coursemate-tooltip-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-weight: 700;
+}
+
+.coursemate-tooltip-name {
+  font-size: 14px;
+}
+
+.coursemate-tooltip-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 14px;
+}
+
+.coursemate-tooltip-subheader {
+  margin-top: 4px;
+  color: #4b5563;
+  font-size: 11px;
+}
+
+.coursemate-tooltip-section {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #eef1f4;
+}
+
+.coursemate-tooltip-section-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b7280;
+  margin-bottom: 6px;
+}
+
+.coursemate-grade-row {
+  display: grid;
+  grid-template-columns: 16px 1fr 36px;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.coursemate-grade-label {
+  font-weight: 600;
+  color: #374151;
+}
+
+.coursemate-grade-bar {
+  height: 6px;
+  background: #edf0f4;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.coursemate-grade-bar-fill {
+  height: 100%;
+  background: #c8102e;
+}
+
+.coursemate-grade-value {
+  text-align: right;
+  font-size: 10px;
+  color: #4b5563;
+}
+
+.coursemate-grade-gpa {
+  margin-top: 4px;
+  font-size: 10px;
+  color: #4b5563;
+}
+
+.coursemate-review {
+  font-size: 11px;
+  color: #374151;
+  margin-bottom: 6px;
+}
+
+.coursemate-review:last-child {
+  margin-bottom: 0;
+}
+
+.coursemate-tooltip-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+  font-size: 11px;
+}
+
+.coursemate-tooltip-link {
+  color: #2563eb;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.coursemate-tooltip-link:hover {
+  text-decoration: underline;
+}
+
+.coursemate-tooltip-loading {
+  font-size: 11px;
+  color: #6b7280;
+}
+
+@media (prefers-color-scheme: dark) {
+  .coursemate-tooltip {
+    background: #1f2933;
+    border-color: #2c3a44;
+    color: #e5e7eb;
+  }
+
+  .coursemate-tooltip-subheader,
+  .coursemate-grade-value,
+  .coursemate-grade-gpa,
+  .coursemate-tooltip-section-title {
+    color: #a7b0bb;
+  }
+
+  .coursemate-grade-bar {
+    background: #2c3a44;
+  }
+
+  .coursemate-review {
+    color: #d1d5db;
   }
 }

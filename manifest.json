@@ -1,14 +1,26 @@
 {
   "manifest_version": 3,
-  "name": "CourseMate",
+  "name": "CourseMate (Test)",
   "short_name": "CourseMate",
   "version": "1.0.0",
-  "description": "Displays RateMyProfessors ratings and CougarGrades data on course registration pages. Supports University of Houston, University of North Texas, UTSA, UT Austin, UT Dallas, Texas A&M, Texas State, Texas Tech, and Texas Southern University.",
+  "description": "Displays RateMyProfessors ratings and CougarGrades data on course registration pages. Supports UH, UNT, UTSA, UT Austin, UT Dallas, Texas Southern, Texas State, and CollegeScheduler.",
   "permissions": [
     "storage"
   ],
   "host_permissions": [
     "https://*.uh.edu/*",
+    "https://*.unt.edu/*",
+    "https://*.utsa.edu/*",
+    "https://*.utexas.edu/*",
+    "https://*.utdallas.edu/*",
+    "https://utdallas.collegescheduler.com/*",
+    "https://*.tsu.edu/*",
+    "https://*.ec.tsu.edu/*",
+    "https://reg-prod.ec.tsu.edu/*",
+    "https://*.txstate.edu/*",
+    "https://*.ec.txstate.edu/*",
+    "https://reg-prod.ec.txstate.edu/*",
+    "https://txstate.collegescheduler.com/*",
     "https://www.ratemyprofessors.com/*",
     "https://cougargrades.io/*",
     "https://unpkg.com/*"
@@ -19,7 +31,19 @@
   "content_scripts": [
     {
       "matches": [
-        "https://*.uh.edu/*"
+        "https://*.uh.edu/*",
+        "https://*.unt.edu/*",
+        "https://*.utsa.edu/*",
+        "https://*.utexas.edu/*",
+        "https://*.utdallas.edu/*",
+        "https://utdallas.collegescheduler.com/*",
+        "https://*.tsu.edu/*",
+        "https://*.ec.tsu.edu/*",
+        "https://reg-prod.ec.tsu.edu/*",
+        "https://*.txstate.edu/*",
+        "https://*.ec.txstate.edu/*",
+        "https://reg-prod.ec.txstate.edu/*",
+        "https://txstate.collegescheduler.com/*"
       ],
       "js": ["contentScript.js"],
       "css": ["ui.css"],
