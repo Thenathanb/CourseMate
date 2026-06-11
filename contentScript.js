@@ -42,7 +42,7 @@ const SELECTORS = {
 };
 
 // Track processed elements to avoid duplicates
-const processedElements = new WeakSet();
+let processedElements = new WeakSet();
 
 // Track active badges
 const activeBadges = new Map();
@@ -64,11 +64,19 @@ function extractProfessorName(element) {
   const isBannerSsb = !!element.closest('td[data-property="instructor"]');
   const isCollegeScheduler = !!element.closest('[id^="instructor-option-"]');
   if (isBannerSsb || isCollegeScheduler) {
-    const anchor = element.tagName === 'A'
+    const source = element.tagName === 'A'
       ? element
-      : element.querySelector('a[href^="mailto:"], a.email');
-    let text = (anchor || element).textContent
+      : element.querySelector('a[title], a[aria-label], a[href^="mailto:"], a.email, a');
+    const rawText =
+      source?.getAttribute('title') ||
+      source?.getAttribute('aria-label') ||
+      element.getAttribute('title') ||
+      element.getAttribute('aria-label') ||
+      source?.textContent ||
+      element.textContent;
+    let text = rawText
       .replace(/\s*\((Primary|Secondary|Co-Instructor|Teaching Assistant)\)\s*/gi, '')
+      .replace(/\.{3,}|…/g, '')
       .replace(/\s+/g, ' ')
       .trim();
     if (!text || text.length < 3) return null;
@@ -477,11 +485,17 @@ function createRatingBadge(data, context) {
   };
 
   activeBadges.set(badge, { baseData: data, context: badgeContext });
-  badge.addEventListener('mouseenter', () => {
+
+  function triggerTooltip() {
     const state = activeBadges.get(badge);
-    if (state) {
-      showTooltipForBadge(badge, state.baseData, state.context);
-    }
+    if (state) showTooltipForBadge(badge, state.baseData, state.context);
+  }
+
+  badge.addEventListener('mouseenter', triggerTooltip);
+  badge.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    triggerTooltip();
   });
   badge.addEventListener('mouseleave', () => {
     scheduleHideTooltip();
@@ -499,7 +513,7 @@ function createNotFoundBadge(professorName) {
   badge.textContent = '?';
   badge.style.cursor = 'pointer';
 
-  badge.addEventListener('mouseenter', () => {
+  function showNotFoundTooltip() {
     if (hoverState.hideTimeout) clearTimeout(hoverState.hideTimeout);
     hoverState.activeBadge = badge;
     const tooltip = ensureTooltip();
@@ -516,16 +530,14 @@ function createNotFoundBadge(professorName) {
     `;
     tooltip.classList.add('show');
     positionTooltip(badge);
-  });
+  }
 
-  badge.addEventListener('mouseleave', () => {
-    scheduleHideTooltip();
-  });
-
+  badge.addEventListener('mouseenter', showNotFoundTooltip);
+  badge.addEventListener('mouseleave', () => scheduleHideTooltip());
   badge.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
-    window.open('https://www.ratemyprofessors.com/add/professor', '_blank');
+    showNotFoundTooltip();
   });
 
   return badge;
@@ -546,7 +558,7 @@ function createErrorBadge(message) {
  * Insert badge next to professor name
  */
 function insertBadge(element, badge) {
-  // Anchor tag (Banner SSB with email link): insert badge as sibling after the anchor
+  // Anchor tag (Banner SSB with an instructor link): insert badge as sibling after the anchor
   if (element.tagName === 'A') {
     const next = element.nextElementSibling;
     if (next && next.classList.contains('coursemate-badge')) {
@@ -599,8 +611,46 @@ function insertBadge(element, badge) {
   }
 }
 
+// Returns the .results-linked div in the Banner SSB linked column of the same row.
+function getBannerLinkedDiv(element) {
+  const row = element.closest('tr');
+  if (!row) return null;
+  const cell = row.querySelector('td[data-property="linked"]');
+  if (!cell) return null;
+  return cell.querySelector('.results-linked') || cell;
+}
+
+// Place a badge inside the linked column, replacing any prior badge there.
+function insertLinkedBadge(linkedDiv, badge) {
+  if (!linkedDiv) return;
+  const existing = linkedDiv.querySelector('.coursemate-badge');
+  if (existing) { activeBadges.delete(existing); existing.replaceWith(badge); }
+  else { linkedDiv.appendChild(badge); }
+}
+
+function getBannerBadgeContainer(element) {
+  return getBannerLinkedDiv(element);
+}
+
+function insertProfessorBadge(element, badge) {
+  const bannerContainer = getBannerBadgeContainer(element);
+  if (bannerContainer) {
+    insertLinkedBadge(bannerContainer, badge);
+    return;
+  }
+
+  insertBadge(element, badge);
+}
+
 // Remove any CourseMate badge inserted next to element (used when no rating found)
 function removeBadge(element) {
+  const bannerContainer = getBannerBadgeContainer(element);
+  if (bannerContainer) {
+    const badge = bannerContainer.querySelector('.coursemate-badge');
+    if (badge) { activeBadges.delete(badge); badge.remove(); }
+    return;
+  }
+
   if (element.tagName === 'A' || (element.tagName === 'SPAN' && element.parentElement?.getAttribute('role') === 'option')) {
     const next = element.nextElementSibling;
     if (next && next.classList.contains('coursemate-badge')) {
@@ -646,7 +696,14 @@ async function processProfessorElement(element) {
   }
 
   const loadingBadge = createLoadingBadge();
-  insertBadge(element, loadingBadge);
+  insertProfessorBadge(element, loadingBadge);
+
+  // Extension context invalidated (e.g. extension reloaded while tab was open)
+  if (!chrome?.runtime?.sendMessage) {
+    removeBadge(element);
+    processedElements.delete(element);
+    return;
+  }
 
   try {
     const response = await chrome.runtime.sendMessage({
@@ -665,10 +722,10 @@ async function processProfessorElement(element) {
 
     if (response.found && response.data) {
       // Has a rating — show the rating badge
-      insertBadge(element, createRatingBadge(response.data, { professorName, courseInfo }));
+      insertProfessorBadge(element, createRatingBadge(response.data, { professorName, courseInfo }));
     } else {
       // Confirmed not on RMP — show ? so student can add a rating
-      insertBadge(element, createNotFoundBadge(professorName));
+      insertProfessorBadge(element, createNotFoundBadge(professorName));
     }
 
   } catch (error) {
@@ -732,12 +789,9 @@ function initMutationObserver() {
         }
       }
       // Banner SSB reveals results by removing display:none — catch style/class changes
-      if (mutation.type === 'attributes') {
-        const el = mutation.target;
-        if (el.nodeType === Node.ELEMENT_NODE &&
-            (el.tagName === 'TR' || el.tagName === 'TD' || el.tagName === 'TBODY')) {
-          shouldScan = true;
-        }
+      // on any element (not just TR/TD/TBODY) since some schools toggle a parent div
+      if (mutation.type === 'attributes' && mutation.target.nodeType === Node.ELEMENT_NODE) {
+        shouldScan = true;
       }
       if (shouldScan) break;
     }
@@ -845,7 +899,7 @@ window.courseMateDebug = {
 
   // Clear processed cache and re-scan
   reset: () => {
-    processedElements.clear();
+    processedElements = new WeakSet();
     activeBadges.clear();
     // Remove existing badges
     document.querySelectorAll('.coursemate-badge').forEach(b => b.remove());
