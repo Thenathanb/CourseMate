@@ -21,7 +21,7 @@ function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
 // Cache configuration
 const CACHE_CONFIG = {
   defaultTTL: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
-  prefix: 'courseMate_v5_'
+  prefix: 'courseMate_v6_'
 };
 
 /**
@@ -208,6 +208,7 @@ const RMPProvider = {
       arts: ['fine art', 'studio art', 'visual art'],
       musc: ['music'],
       kine: ['kinesiol', 'physical edu', 'exercise sci', 'sport'],
+      hlth: ['health sci', 'health edu', 'public health', 'community health'],
       educ: ['educat'],
       nurs: ['nurs'],
       mece: ['mechanical eng', 'mechanic'],
@@ -218,6 +219,17 @@ const RMPProvider = {
       span: ['spanish', 'hispanic'],
       fren: ['french'],
       germ: ['german'],
+      crij: ['criminal justice', 'criminolog'],
+      // Alternate 3-letter subject codes (used by some TX schools)
+      psy:  ['psycholog'],
+      bio:  ['biolog'],
+      che:  ['chemi'],
+      phy:  ['physic'],
+      eng:  ['english', 'literatur', 'writing', 'rhetoric', 'composition'],
+      soc:  ['sociolog'],
+      his:  ['histor'],
+      gov:  ['politic', 'government'],
+      eco:  ['econom'],
     };
     const keywords = map[subj] || [];
     if (keywords.some(k => dept.includes(k))) return 2;
@@ -249,28 +261,45 @@ const RMPProvider = {
 
     if (lastMatches.length === 0) return null;
 
-    // Score every last-name candidate — always require positive evidence.
-    // Never return a professor just because they share a last name;
-    // the first name must prefix-match OR the department must align.
-    // This prevents Zoe Ortiz from being returned for Matthew Ortiz.
+    // Score every last-name candidate.
+    // evidenceScore: first-name and/or department match — MUST be > 0 to return any result.
+    // rankScore: exact-last-name tie-breaker used only to sort among valid candidates.
+    // This prevents Stephen Garcia (Health Science) from matching Victoria Garcia (English):
+    // shared last name alone is never enough evidence.
     const scored = lastMatches.map(edge => {
       const prof = edge.node;
       const profFirst = prof.firstName.toLowerCase();
       const profLast = prof.lastName.toLowerCase().trim();
-      let score = 0;
-      if (profFirst.startsWith(expFirst) || expFirst.startsWith(profFirst)) score += 4;
-      // Exact last name match scores higher than hyphenated-extension match
-      if (profLast === expLast) score += 2;
-      score += this._deptScore(prof.department, subject);
-      return { prof, score };
+      let evidenceScore = 0;
+      let rankScore = 0;
+
+      // First-name prefix match — both names must be at least 2 chars to count as evidence.
+      // This blocks "S" (initial) from matching "Stephen" or "" from matching anything.
+      const firstNameMatch =
+        expFirst.length >= 2 && profFirst.length >= 2 &&
+        (profFirst.startsWith(expFirst) || expFirst.startsWith(profFirst));
+      if (firstNameMatch) evidenceScore += 4;
+
+      if (profLast === expLast) rankScore += 2; // tie-breaker only, not evidence
+      evidenceScore += this._deptScore(prof.department, subject);
+
+      console.log(`[CourseMate] Candidate: ${prof.firstName} ${prof.lastName} (${prof.department}) | evidenceScore=${evidenceScore} rankScore=${rankScore}`);
+      return { prof, evidenceScore, rankScore };
     });
 
-    scored.sort((a, b) => b.score - a.score);
-
-    if (scored[0].score > 0) {
-      return { found: true, data: this._buildData(scored[0].prof) };
+    // Only consider candidates with real evidence (first name or department match).
+    const valid = scored.filter(c => c.evidenceScore > 0);
+    if (valid.length === 0) {
+      console.log(`[CourseMate] No valid candidates for ${expFirst} ${expLast} — showing ? badge`);
+      return null;
     }
-    return null;
+
+    valid.sort((a, b) =>
+      (b.evidenceScore + b.rankScore) - (a.evidenceScore + a.rankScore)
+    );
+
+    console.log(`[CourseMate] Selected: ${valid[0].prof.firstName} ${valid[0].prof.lastName}`);
+    return { found: true, data: this._buildData(valid[0].prof) };
   },
 
   async search(lastName, firstName, hostname, courseInfo) {
@@ -297,29 +326,46 @@ const RMPProvider = {
 
       // Fallback: search without school ID for professors whose RMP profile
       // is still listed under a previous school (e.g. transferred from Collin College to UNT).
-      // Use strict exact-name matching only to avoid false positives across schools.
-      // Prefer matches from the correct school (filter), skip matches from unrelated schools.
+      // Requires exact name match AND department must align with the course subject —
+      // prevents a Biology "Victoria Garcia" from showing on an English course.
       if (!PRODUCTION_MODE) console.log(`[RMP API] Attempt 3 — cross-school fallback for: "${lastName}"`);
+      const subject = courseInfo?.subject;
       const fallbackByLast = await this._queryRMP(lastName, null, null);
-      // First try to find an exact match at the correct school
-      const exactByLastSameSchool = this._findExactMatch(
-        filter ? fallbackByLast.filter(e => (e.node.school?.name || '').toLowerCase().includes(filter)) : fallbackByLast,
-        firstName, lastName
-      );
-      if (exactByLastSameSchool) return exactByLastSameSchool;
-      // Then try any school (for professors whose RMP profile is under a prior institution)
-      const exactByLast = this._findExactMatch(fallbackByLast, firstName, lastName);
-      if (exactByLast) return exactByLast;
+
+      // Helper: exact name match with required dept alignment when subject is known.
+      const exactWithDept = (pool, expFirst, expLast) => {
+        const expFirstLc = expFirst.toLowerCase();
+        const expLastLc = expLast.toLowerCase();
+        return pool.find(e => {
+          const prof = e.node;
+          if (prof.firstName.toLowerCase() !== expFirstLc) return false;
+          if (prof.lastName.toLowerCase() !== expLastLc) return false;
+          // If we know the subject, the professor's dept must align — no dept info = skip.
+          if (subject && this._deptScore(prof.department, subject) === 0) return false;
+          return true;
+        }) || null;
+      };
+
+      // 1. Exact name + dept match at the correct school
+      const sameSchoolPool = filter
+        ? fallbackByLast.filter(e => (e.node.school?.name || '').toLowerCase().includes(filter))
+        : fallbackByLast;
+      const byLastSameSchool = exactWithDept(sameSchoolPool, firstName, lastName);
+      if (byLastSameSchool) return { found: true, data: this._buildData(byLastSameSchool.node) };
+
+      // 2. Exact name + dept match at any school (professor on RMP under a prior institution)
+      const byLastAnySchool = exactWithDept(fallbackByLast, firstName, lastName);
+      if (byLastAnySchool) return { found: true, data: this._buildData(byLastAnySchool.node) };
 
       if (firstName && firstName.toLowerCase() !== lastName.toLowerCase()) {
         const fallbackByFirst = await this._queryRMP(firstName, null, null);
-        const exactByFirstSameSchool = this._findExactMatch(
-          filter ? fallbackByFirst.filter(e => (e.node.school?.name || '').toLowerCase().includes(filter)) : fallbackByFirst,
-          lastName, firstName
-        );
-        if (exactByFirstSameSchool) return exactByFirstSameSchool;
-        const exactByFirst = this._findExactMatch(fallbackByFirst, lastName, firstName);
-        if (exactByFirst) return exactByFirst;
+        const sameSchoolPoolFirst = filter
+          ? fallbackByFirst.filter(e => (e.node.school?.name || '').toLowerCase().includes(filter))
+          : fallbackByFirst;
+        const byFirstSameSchool = exactWithDept(sameSchoolPoolFirst, lastName, firstName);
+        if (byFirstSameSchool) return { found: true, data: this._buildData(byFirstSameSchool.node) };
+        const byFirstAnySchool = exactWithDept(fallbackByFirst, lastName, firstName);
+        if (byFirstAnySchool) return { found: true, data: this._buildData(byFirstAnySchool.node) };
       }
 
       return { found: false, message: 'Professor not found on RMP' };
