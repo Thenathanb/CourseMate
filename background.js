@@ -281,22 +281,17 @@ const RMPProvider = {
       if (profLast === expLast) rankScore += 2; // tie-breaker only, not evidence
       evidenceScore += this._deptScore(prof.department, subject);
 
-      console.log(`[CourseMate] Candidate: ${prof.firstName} ${prof.lastName} (${prof.department}) | evidenceScore=${evidenceScore} rankScore=${rankScore}`);
       return { prof, evidenceScore, rankScore };
     });
 
     // Only consider candidates with real evidence (first name or department match).
     const valid = scored.filter(c => c.evidenceScore > 0);
-    if (valid.length === 0) {
-      console.log(`[CourseMate] No valid candidates for ${expFirst} ${expLast} — showing ? badge`);
-      return null;
-    }
+    if (valid.length === 0) return null;
 
     valid.sort((a, b) =>
       (b.evidenceScore + b.rankScore) - (a.evidenceScore + a.rankScore)
     );
 
-    console.log(`[CourseMate] Selected: ${valid[0].prof.firstName} ${valid[0].prof.lastName}`);
     return { found: true, data: this._buildData(valid[0].prof) };
   },
 
