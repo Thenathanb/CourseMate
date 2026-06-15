@@ -43,6 +43,16 @@ Texas A&M · Texas State · Texas Tech · Texas Southern
 
 ## Installation
 
+### Chrome Web Store (Recommended)
+
+**[➜ Install CourseMate on the Chrome Web Store](https://chromewebstore.google.com/detail/coursemate/opdladhnlkndlddmfmclfgknogjhnenl)**
+
+1. Click the link above and click **"Add to Chrome"**
+2. Navigate to your university's course registration page
+3. Instructor badges appear automatically — no setup needed
+
+---
+
 ### Load Unpacked (Development / Testing)
 
 1. **Clone the repo and check out the branch for your school**
