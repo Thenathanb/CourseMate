@@ -3,7 +3,7 @@
   "name": "CourseMate (Test)",
   "short_name": "CourseMate",
   "version": "1.0.0",
-  "description": "Displays RateMyProfessors ratings and CougarGrades data on course registration pages. Supports UH, UNT, UTSA, UT Austin, UT Dallas, Texas Southern, Texas State, and CollegeScheduler.",
+  "description": "Displays RateMyProfessors ratings and CougarGrades data on course registration pages. Supports UH, UNT, UTSA, UT Austin, UT Dallas, Texas Southern, Texas State, Texas A&M, Texas Tech, and CollegeScheduler.",
   "permissions": [
     "storage"
   ],
@@ -21,6 +21,9 @@
     "https://*.ec.txstate.edu/*",
     "https://reg-prod.ec.txstate.edu/*",
     "https://txstate.collegescheduler.com/*",
+    "https://tamu.collegescheduler.com/*",
+    "https://*.texastech.edu/*",
+    "https://registration.texastech.edu/*",
     "https://www.ratemyprofessors.com/*",
     "https://cougargrades.io/*",
     "https://unpkg.com/*"
@@ -43,7 +46,10 @@
         "https://*.txstate.edu/*",
         "https://*.ec.txstate.edu/*",
         "https://reg-prod.ec.txstate.edu/*",
-        "https://txstate.collegescheduler.com/*"
+        "https://txstate.collegescheduler.com/*",
+        "https://tamu.collegescheduler.com/*",
+        "https://*.texastech.edu/*",
+        "https://registration.texastech.edu/*"
       ],
       "js": ["contentScript.js"],
       "css": ["ui.css"],

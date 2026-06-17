@@ -104,6 +104,9 @@ const SCHOOL_CONFIGS = {
   'txstate.edu':                    { schoolId: 'U2Nob29sLTkzOA==', filter: 'texas state university' },
   'ec.txstate.edu':                 { schoolId: 'U2Nob29sLTkzOA==', filter: 'texas state university' },
   'txstate.collegescheduler.com':   { schoolId: 'U2Nob29sLTkzOA==', filter: 'texas state university' },
+  'tamu.collegescheduler.com':      { schoolId: 'U2Nob29sLTE5NDk2', filter: 'texas a&m' },
+  'texastech.edu':                  { schoolId: 'U2Nob29sLTEwMTE=', filter: 'texas tech university' },
+  'registration.texastech.edu':     { schoolId: 'U2Nob29sLTEwMTE=', filter: 'texas tech university' },
 };
 
 function getSchoolConfig(hostname) {
