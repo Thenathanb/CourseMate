@@ -330,6 +330,21 @@ td[data-property="linked"] .coursemate-badge,
   color: #6b7280;
 }
 
+.coursemate-copy-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #2563eb;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.coursemate-copy-btn:hover {
+  text-decoration: underline;
+}
+
 @media (prefers-color-scheme: dark) {
   .coursemate-tooltip {
     background: #1f2933;

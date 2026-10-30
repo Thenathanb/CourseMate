@@ -21,7 +21,7 @@ function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
 // Cache configuration
 const CACHE_CONFIG = {
   defaultTTL: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
-  prefix: 'courseMate_v6_'
+  prefix: 'courseMate_v8_'
 };
 
 /**
@@ -239,15 +239,17 @@ const RMPProvider = {
     return 0;
   },
 
-  _findMatch(professors, expectedFirst, expectedLast, courseInfo) {
-    const expFirst = expectedFirst.toLowerCase();
+  _findMatch(professors, expectedFirst, expectedLast, courseInfo, middleNames = []) {
+    const expFirst = expectedFirst.toLowerCase().replace(/\./g, '');
     const expLast = expectedLast.toLowerCase();
     const subject = courseInfo?.subject;
+    // Some instructors go by a middle name ("Mary Elizabeth Dubois" may be "Elizabeth Dubois" on RMP)
+    const expGivenNames = [expFirst, ...middleNames.map(n => n.toLowerCase()).filter(n => n.length >= 2)];
 
-    // 1. Exact first + last name match
+    // 1. Exact first (or middle) + last name match
     for (const edge of professors) {
       const prof = edge.node;
-      if (prof.firstName.toLowerCase() === expFirst &&
+      if (expGivenNames.includes(prof.firstName.toLowerCase()) &&
           prof.lastName.toLowerCase() === expLast) {
         return { found: true, data: this._buildData(prof) };
       }
@@ -255,12 +257,7 @@ const RMPProvider = {
 
     // Narrow to professors whose last name matches exactly OR whose hyphenated
     // last name starts with the searched last name (e.g. "Douglas" matches "Douglas-Butler").
-    const lastMatches = professors.filter(edge => {
-      const rmpLast = edge.node.lastName.toLowerCase().trim();
-      return rmpLast === expLast ||
-             rmpLast.startsWith(expLast + '-') ||
-             rmpLast.startsWith(expLast + ' ');
-    });
+    const lastMatches = professors.filter(edge => lastNameMatches(edge.node.lastName, expLast));
 
     if (lastMatches.length === 0) return null;
 
@@ -278,10 +275,17 @@ const RMPProvider = {
 
       // First-name prefix match — both names must be at least 2 chars to count as evidence.
       // This blocks "S" (initial) from matching "Stephen" or "" from matching anything.
-      const firstNameMatch =
-        expFirst.length >= 2 && profFirst.length >= 2 &&
-        (profFirst.startsWith(expFirst) || expFirst.startsWith(profFirst));
+      // RMP sometimes stores several given names as the first name ("Md Shahadath")
+      const profGivenNames = [profFirst, ...profFirst.split(/[\s.]+/).filter(n => n.length >= 2)];
+      const firstNameMatch = profFirst.length >= 2 && expGivenNames.some(given =>
+        given.length >= 2 && profGivenNames.some(prof => prof.startsWith(given) || given.startsWith(prof)));
       if (firstNameMatch) evidenceScore += 4;
+
+      // Two full first names that disagree are different people, whatever the department:
+      // "Kathleen Kelly" must not match "Hannah Kelly" just because both teach English.
+      if (!firstNameMatch && expFirst.length >= 2 && profFirst.length >= 2) {
+        return { prof, evidenceScore: 0, rankScore };
+      }
 
       if (profLast === expLast) rankScore += 2; // tie-breaker only, not evidence
       evidenceScore += this._deptScore(prof.department, subject);
@@ -293,20 +297,32 @@ const RMPProvider = {
     const valid = scored.filter(c => c.evidenceScore > 0);
     if (valid.length === 0) return null;
 
+    // Equal scores usually mean duplicate RMP profiles for one person; keep the one with more ratings
     valid.sort((a, b) =>
-      (b.evidenceScore + b.rankScore) - (a.evidenceScore + a.rankScore)
+      (b.evidenceScore + b.rankScore) - (a.evidenceScore + a.rankScore) ||
+      (b.prof.numRatings || 0) - (a.prof.numRatings || 0)
     );
 
     return { found: true, data: this._buildData(valid[0].prof) };
   },
 
-  async search(lastName, firstName, hostname, courseInfo) {
+  async search(lastName, firstName, hostname, courseInfo, middleNames = []) {
     const { schoolId, filter } = getSchoolConfig(hostname);
     try {
       if (!PRODUCTION_MODE) console.log(`[RMP API] Attempt 1 — searching by lastName: "${lastName}"`);
       const byLast = await this._queryRMP(lastName, schoolId, filter);
       if (byLast.length > 0) {
-        const match = this._findMatch(byLast, firstName, lastName, courseInfo);
+        const match = this._findMatch(byLast, firstName, lastName, courseInfo, middleNames);
+        if (match) return match;
+      }
+
+      // A common last name ("Hossain", "Wang") can push the right person past the first page
+      // of results, and RMP may list a hyphenated name under one half ("LeVeaux-Haley" -> "Leveaux").
+      const extraQueries = [`${firstName} ${lastName}`];
+      if (lastName.includes('-')) extraQueries.push(...lastName.split('-'));
+      for (const text of extraQueries) {
+        const results = await this._queryRMP(text, schoolId, filter);
+        const match = results.length > 0 && this._findMatch(results, firstName, lastName, courseInfo, middleNames);
         if (match) return match;
       }
 
@@ -374,6 +390,25 @@ const RMPProvider = {
   }
 };
 
+/**
+ * Whether an RMP last name refers to the same surname as the registration page's.
+ * Covers hyphenated and two-word surnames written differently on each side:
+ * "Douglas-Butler"/"Douglas", "St Hill"/"Hill" (from "St. Hill"), "Wells Cooper"/"Cooper",
+ * "Leveaux"/"LeVeaux-Haley".
+ */
+function lastNameMatches(rmpLastName, expectedLast) {
+  const clean = value => value.toLowerCase().replace(/\./g, '').replace(/\s+/g, ' ').trim();
+  const rmpLast = clean(rmpLastName);
+  const expLast = clean(expectedLast);
+  if (!rmpLast || !expLast) return false;
+  return rmpLast === expLast ||
+         rmpLast.startsWith(expLast + '-') ||
+         rmpLast.startsWith(expLast + ' ') ||
+         rmpLast.endsWith('-' + expLast) ||
+         rmpLast.endsWith(' ' + expLast) ||
+         (expLast.includes('-') && expLast.split('-').includes(rmpLast));
+}
+
 // Active provider - switch between MockProvider and real provider
 const DataProvider = RMPProvider; // Using real RMP API now!
 
@@ -385,7 +420,7 @@ function normalizeName(name, school = 'uh') {
   if (!name) return null;
 
   // Remove common suffixes
-  let cleaned = name.replace(/\b(Jr\.?|Sr\.?|III?|IV|Ph\.?D\.?|M\.?D\.?)\b/gi, '').trim();
+  let cleaned = name.replace(/,?\s*\b(Jr|Sr|III?|IV|Ph\.?D|M\.D)\.?(?=[\s,]|$)/gi, '').trim();
 
   // Remove extra whitespace
   cleaned = cleaned.replace(/\s+/g, ' ');
@@ -495,11 +530,12 @@ const PRODUCTION_MODE = true;
  * Parse professor name into first and last
  */
 function parseProfessorName(fullName) {
-  const cleaned = fullName.trim().replace(/\b(Jr\.?|Sr\.?|III?|IV|Ph\.?D\.?|M\.?D\.?)\b/gi, '').trim();
+  const cleaned = fullName.trim().replace(/,?\s*\b(Jr|Sr|III?|IV|Ph\.?D|M\.D)\.?(?=[\s,]|$)/gi, '').trim();
 
   let firstName = '';
   let lastName = '';
   let middleInitial = '';
+  let middleNames = [];
 
   // Handle "Last, First" format
   if (cleaned.includes(',')) {
@@ -508,6 +544,7 @@ function parseProfessorName(fullName) {
     if (parts[1]) {
       const nameParts = parts[1].split(' ').filter(Boolean);
       firstName = nameParts[0] || '';
+      middleNames = nameParts.slice(1).map(n => n.replace('.', ''));
       if (nameParts.length > 1 && nameParts[1].length <= 2) {
         middleInitial = nameParts[1].replace('.', '');
       }
@@ -517,6 +554,7 @@ function parseProfessorName(fullName) {
     const parts = cleaned.split(' ').filter(Boolean);
     if (parts.length >= 2) {
       firstName = parts[0];
+      middleNames = parts.slice(1, -1).map(n => n.replace('.', ''));
       if (parts.length >= 3 && parts[1].length <= 2) {
         middleInitial = parts[1].replace('.', '');
       }
@@ -526,7 +564,7 @@ function parseProfessorName(fullName) {
     }
   }
 
-  return { firstName, lastName, middleInitial };
+  return { firstName, lastName, middleInitial, middleNames };
 }
 
 /**
@@ -534,7 +572,7 @@ function parseProfessorName(fullName) {
  */
 async function fetchProfessorData(professorName, school = 'uh.edu', courseInfo = null) {
   try {
-    const { firstName, lastName } = parseProfessorName(professorName);
+    const { firstName, lastName, middleNames } = parseProfessorName(professorName);
 
     if (!firstName || !lastName) {
       return { error: 'Invalid professor name' };
@@ -562,7 +600,7 @@ async function fetchProfessorData(professorName, school = 'uh.edu', courseInfo =
 
     // Fetch from provider (pass firstName and lastName)
     await logDebug(`Fetching from RMP API: ${lastName}, ${firstName}`);
-    const result = await DataProvider.search(lastName, firstName, school, courseInfo);
+    const result = await DataProvider.search(lastName, firstName, school, courseInfo, middleNames);
 
     // Cache the result (even if not found, to prevent repeated lookups)
     await saveToCache(cacheKey, result);
@@ -639,6 +677,215 @@ async function fetchRMPReviewsById(teacherId, count = 3) {
 }
 
 /**
+ * CougarGrades (UH only)
+ * The course endpoint returns every past section with its instructors and
+ * grade counts, so one request per course covers every professor on the page.
+ */
+const COUGARGRADES_CONFIG = {
+  apiBaseUrl: 'https://api.cougargrades.io/api',
+  siteUrl: 'https://cougargrades.io',
+  cachePrefix: 'courseMateGrades_v2_',
+  requestTimeoutMs: 15000
+};
+
+// In-flight course fetches, so many badges for one course share a single request
+const pendingCourseGradeFetches = new Map();
+
+function isUHHost(hostname) {
+  return /(^|\.)uh\.edu$/i.test(hostname || '');
+}
+
+function normalizeNamePart(value) {
+  return (value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function firstNameToken(value) {
+  return normalizeNamePart((value || '').trim().split(/\s+/)[0]);
+}
+
+async function fetchCougarGradesCourse(courseName) {
+  const response = await fetchWithTimeout(
+    `${COUGARGRADES_CONFIG.apiBaseUrl}/course/${encodeURIComponent(courseName)}`,
+    {},
+    COUGARGRADES_CONFIG.requestTimeoutMs
+  );
+  if (!response.ok) {
+    throw new Error(`CougarGrades returned ${response.status}`);
+  }
+  // Unknown courses come back as a literal null
+  return response.json();
+}
+
+// Collapse section rows into per-instructor grade totals
+function aggregateSectionsByInstructor(rows) {
+  const byInstructor = new Map();
+
+  for (const row of rows) {
+    for (const name of row.instructorNames || []) {
+      const key = `${normalizeNamePart(name.lastName)}_${normalizeNamePart(name.firstName)}`;
+      if (!byInstructor.has(key)) {
+        byInstructor.set(key, {
+          firstName: name.firstName,
+          lastName: name.lastName,
+          totals: { A: 0, B: 0, C: 0, D: 0, F: 0, W: 0 },
+          gpaSum: 0,
+          gpaWeight: 0,
+          sections: 0,
+          lastTerm: 0,
+          lastTermString: ''
+        });
+      }
+
+      const entry = byInstructor.get(key);
+      for (const letter of ['A', 'B', 'C', 'D', 'F', 'W']) {
+        entry.totals[letter] += row[letter] || 0;
+      }
+
+      const graded = (row.A || 0) + (row.B || 0) + (row.C || 0) + (row.D || 0) + (row.F || 0);
+      if (typeof row.semesterGPA === 'number' && graded > 0) {
+        entry.gpaSum += row.semesterGPA * graded;
+        entry.gpaWeight += graded;
+      }
+
+      entry.sections += 1;
+      if (row.term > entry.lastTerm) {
+        entry.lastTerm = row.term;
+        entry.lastTermString = row.termString || '';
+      }
+    }
+  }
+
+  return [...byInstructor.values()];
+}
+
+async function loadCourseGrades(subject, catalog) {
+  const courseName = `${subject} ${catalog}`;
+  const cacheKey = `${COUGARGRADES_CONFIG.cachePrefix}${subject}_${catalog}`;
+
+  const cached = await getFromCache(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  if (pendingCourseGradeFetches.has(courseName)) {
+    return pendingCourseGradeFetches.get(courseName);
+  }
+
+  const promise = (async () => {
+    const course = await fetchCougarGradesCourse(courseName);
+    let rows = course?.dataGrid?.rows || [];
+
+    // Courses renumbered under TCCNS (e.g. MATH 1431 -> MATH 2413) keep older sections under the old number
+    const formerNames = (course?.tccnsUpdates || [])
+      .filter(update => /^previously known as/i.test(update.shortMessage || ''))
+      .map(update => decodeURIComponent((update.courseHref || '').replace(/^\/c\//, '')))
+      .filter(name => name && name !== courseName);
+
+    for (const formerName of formerNames) {
+      try {
+        const former = await fetchCougarGradesCourse(formerName);
+        rows = rows.concat(former?.dataGrid?.rows || []);
+      } catch (error) {
+        console.warn(`[CourseMate] CougarGrades lookup failed for ${formerName}:`, error);
+      }
+    }
+
+    const result = { courseName, instructors: aggregateSectionsByInstructor(rows) };
+    await saveToCache(cacheKey, result);
+    return result;
+  })().finally(() => {
+    pendingCourseGradeFetches.delete(courseName);
+  });
+
+  pendingCourseGradeFetches.set(courseName, promise);
+  return promise;
+}
+
+// UH registration shows "Jae Y Kim" where CougarGrades has "Kim, Jae Youn",
+// so match on last name plus the first word of the first name.
+function findInstructorGrades(instructors, firstName, lastName, middleInitial) {
+  const lastKey = normalizeNamePart(lastName);
+  const firstKey = normalizeNamePart(firstName);
+  if (!lastKey || !firstKey) {
+    return null;
+  }
+
+  const sameLast = instructors.filter(entry => normalizeNamePart(entry.lastName) === lastKey);
+  let matches = sameLast.filter(entry => firstNameToken(entry.firstName) === firstKey);
+
+  // Shopping cart shows initials only ("E. Barbieri"); accept when the initial is unambiguous
+  if (matches.length === 0 && firstKey.length === 1) {
+    matches = sameLast.filter(entry => firstNameToken(entry.firstName).startsWith(firstKey));
+  }
+
+  if (matches.length === 0 && firstKey.length >= 2) {
+    matches = sameLast.filter(entry => {
+      const token = firstNameToken(entry.firstName);
+      return token.length >= 2 && (token.startsWith(firstKey) || firstKey.startsWith(token));
+    });
+  }
+
+  if (matches.length > 1 && middleInitial) {
+    const initial = middleInitial[0].toLowerCase();
+    const narrowed = matches.filter(entry =>
+      (entry.firstName.trim().split(/\s+/)[1] || '').toLowerCase().startsWith(initial)
+    );
+    if (narrowed.length > 0) {
+      matches = narrowed;
+    }
+  }
+
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function buildGradeDistribution(entry, courseName) {
+  const { totals } = entry;
+  const graded = totals.A + totals.B + totals.C + totals.D + totals.F;
+  const cougarGradesUrl = `${COUGARGRADES_CONFIG.siteUrl}/i/${encodeURIComponent(`${entry.lastName}, ${entry.firstName}`.toLowerCase())}`;
+
+  if (!graded) {
+    return { course: courseName, notFound: true, cougarGradesUrl };
+  }
+
+  const percent = count => Math.round((count / graded) * 100);
+  return {
+    course: courseName,
+    percentages: {
+      A: percent(totals.A),
+      B: percent(totals.B),
+      C: percent(totals.C),
+      D: percent(totals.D),
+      F: percent(totals.F)
+    },
+    gpa: entry.gpaWeight ? entry.gpaSum / entry.gpaWeight : undefined,
+    dropRate: Math.round((totals.W / (graded + totals.W)) * 1000) / 10,
+    sections: entry.sections,
+    lastTaught: entry.lastTermString,
+    cougarGradesUrl
+  };
+}
+
+async function fetchGradeData({ professorName, courseInfo, school }) {
+  if (!isUHHost(school) || !courseInfo?.subject || !courseInfo?.catalog) {
+    return null;
+  }
+
+  const { firstName, lastName, middleInitial } = parseProfessorName(professorName || '');
+  const course = await loadCourseGrades(courseInfo.subject.toUpperCase(), courseInfo.catalog);
+  const entry = findInstructorGrades(course.instructors, firstName, lastName, middleInitial);
+
+  if (!entry) {
+    return {
+      course: course.courseName,
+      notFound: true,
+      cougarGradesUrl: `${COUGARGRADES_CONFIG.siteUrl}/c/${encodeURIComponent(course.courseName)}`
+    };
+  }
+
+  return buildGradeDistribution(entry, course.courseName);
+}
+
+/**
  * Message listener for content script requests
  */
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -673,6 +920,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         sendResponse({ error: error.message });
       }
     })();
+
+    return true;
+  }
+
+  if (request.action === 'getGradeData') {
+    fetchGradeData(request || {})
+      .then(data => sendResponse(data))
+      .catch(error => {
+        console.error('[Background] Grade data error:', error);
+        sendResponse({ error: error.message });
+      });
 
     return true;
   }
