@@ -21,7 +21,7 @@ function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
 // Cache configuration
 const CACHE_CONFIG = {
   defaultTTL: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
-  prefix: 'courseMate_v7_'
+  prefix: 'courseMate_v8_'
 };
 
 /**
@@ -240,7 +240,7 @@ const RMPProvider = {
   },
 
   _findMatch(professors, expectedFirst, expectedLast, courseInfo, middleNames = []) {
-    const expFirst = expectedFirst.toLowerCase();
+    const expFirst = expectedFirst.toLowerCase().replace(/\./g, '');
     const expLast = expectedLast.toLowerCase();
     const subject = courseInfo?.subject;
     // Some instructors go by a middle name ("Mary Elizabeth Dubois" may be "Elizabeth Dubois" on RMP)
@@ -257,12 +257,7 @@ const RMPProvider = {
 
     // Narrow to professors whose last name matches exactly OR whose hyphenated
     // last name starts with the searched last name (e.g. "Douglas" matches "Douglas-Butler").
-    const lastMatches = professors.filter(edge => {
-      const rmpLast = edge.node.lastName.toLowerCase().trim();
-      return rmpLast === expLast ||
-             rmpLast.startsWith(expLast + '-') ||
-             rmpLast.startsWith(expLast + ' ');
-    });
+    const lastMatches = professors.filter(edge => lastNameMatches(edge.node.lastName, expLast));
 
     if (lastMatches.length === 0) return null;
 
@@ -280,8 +275,10 @@ const RMPProvider = {
 
       // First-name prefix match — both names must be at least 2 chars to count as evidence.
       // This blocks "S" (initial) from matching "Stephen" or "" from matching anything.
+      // RMP sometimes stores several given names as the first name ("Md Shahadath")
+      const profGivenNames = [profFirst, ...profFirst.split(/[\s.]+/).filter(n => n.length >= 2)];
       const firstNameMatch = profFirst.length >= 2 && expGivenNames.some(given =>
-        given.length >= 2 && (profFirst.startsWith(given) || given.startsWith(profFirst)));
+        given.length >= 2 && profGivenNames.some(prof => prof.startsWith(given) || given.startsWith(prof)));
       if (firstNameMatch) evidenceScore += 4;
 
       // Two full first names that disagree are different people, whatever the department:
@@ -300,8 +297,10 @@ const RMPProvider = {
     const valid = scored.filter(c => c.evidenceScore > 0);
     if (valid.length === 0) return null;
 
+    // Equal scores usually mean duplicate RMP profiles for one person; keep the one with more ratings
     valid.sort((a, b) =>
-      (b.evidenceScore + b.rankScore) - (a.evidenceScore + a.rankScore)
+      (b.evidenceScore + b.rankScore) - (a.evidenceScore + a.rankScore) ||
+      (b.prof.numRatings || 0) - (a.prof.numRatings || 0)
     );
 
     return { found: true, data: this._buildData(valid[0].prof) };
@@ -314,6 +313,16 @@ const RMPProvider = {
       const byLast = await this._queryRMP(lastName, schoolId, filter);
       if (byLast.length > 0) {
         const match = this._findMatch(byLast, firstName, lastName, courseInfo, middleNames);
+        if (match) return match;
+      }
+
+      // A common last name ("Hossain", "Wang") can push the right person past the first page
+      // of results, and RMP may list a hyphenated name under one half ("LeVeaux-Haley" -> "Leveaux").
+      const extraQueries = [`${firstName} ${lastName}`];
+      if (lastName.includes('-')) extraQueries.push(...lastName.split('-'));
+      for (const text of extraQueries) {
+        const results = await this._queryRMP(text, schoolId, filter);
+        const match = results.length > 0 && this._findMatch(results, firstName, lastName, courseInfo, middleNames);
         if (match) return match;
       }
 
@@ -381,6 +390,25 @@ const RMPProvider = {
   }
 };
 
+/**
+ * Whether an RMP last name refers to the same surname as the registration page's.
+ * Covers hyphenated and two-word surnames written differently on each side:
+ * "Douglas-Butler"/"Douglas", "St Hill"/"Hill" (from "St. Hill"), "Wells Cooper"/"Cooper",
+ * "Leveaux"/"LeVeaux-Haley".
+ */
+function lastNameMatches(rmpLastName, expectedLast) {
+  const clean = value => value.toLowerCase().replace(/\./g, '').replace(/\s+/g, ' ').trim();
+  const rmpLast = clean(rmpLastName);
+  const expLast = clean(expectedLast);
+  if (!rmpLast || !expLast) return false;
+  return rmpLast === expLast ||
+         rmpLast.startsWith(expLast + '-') ||
+         rmpLast.startsWith(expLast + ' ') ||
+         rmpLast.endsWith('-' + expLast) ||
+         rmpLast.endsWith(' ' + expLast) ||
+         (expLast.includes('-') && expLast.split('-').includes(rmpLast));
+}
+
 // Active provider - switch between MockProvider and real provider
 const DataProvider = RMPProvider; // Using real RMP API now!
 
@@ -392,7 +420,7 @@ function normalizeName(name, school = 'uh') {
   if (!name) return null;
 
   // Remove common suffixes
-  let cleaned = name.replace(/\b(Jr\.?|Sr\.?|III?|IV|Ph\.?D\.?|M\.?D\.?)\b/gi, '').trim();
+  let cleaned = name.replace(/,?\s*\b(Jr|Sr|III?|IV|Ph\.?D|M\.D)\.?(?=[\s,]|$)/gi, '').trim();
 
   // Remove extra whitespace
   cleaned = cleaned.replace(/\s+/g, ' ');
@@ -502,7 +530,7 @@ const PRODUCTION_MODE = true;
  * Parse professor name into first and last
  */
 function parseProfessorName(fullName) {
-  const cleaned = fullName.trim().replace(/\b(Jr\.?|Sr\.?|III?|IV|Ph\.?D\.?|M\.?D\.?)\b/gi, '').trim();
+  const cleaned = fullName.trim().replace(/,?\s*\b(Jr|Sr|III?|IV|Ph\.?D|M\.D)\.?(?=[\s,]|$)/gi, '').trim();
 
   let firstName = '';
   let lastName = '';

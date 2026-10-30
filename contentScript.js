@@ -113,7 +113,7 @@ function extractProfessorName(element) {
   // PeopleSoft / generic selectors — stricter validation
   const namePatterns = [
     /^([A-Z][a-zA-Z'\-]+),\s*([A-Z])/,       // Last, First (allows hyphens, apostrophes)
-    /^[A-Z][a-zA-Z'\-]+(\s+[A-Z][a-zA-Z'\-]*\.?)*\s+[A-Z][a-zA-Z'\-]+$/, // First [Middle names | M.] Last
+    /^[A-Z][a-zA-Z'\-]*\.?(\s+[A-Z][a-zA-Z'\-]*\.?)*\s+[A-Z][a-zA-Z'\-]+$/, // [F. | First] [Middle names | M.] Last
     /^([A-Z][A-Z'\-\s]+),\s*([A-Z][A-Z'\-\s]+)$/  // ALL CAPS: LAST, FIRST
   ];
   for (const pattern of namePatterns) {
@@ -171,6 +171,14 @@ function findSectionContainer(element) {
   }
 
   return element.closest('tr') || element.closest('[role="row"]') || element.parentElement;
+}
+
+function pageHasLectureSections() {
+  const componentCells = document.querySelectorAll('td.CMPNT_CLASS_NBR, td[data-property="scheduleType"]');
+  // Pages without component labels (shopping cart, other layouts) keep the old lab filtering
+  if (componentCells.length === 0) return true;
+  return Array.from(componentCells).some(cell =>
+    /\bLEC\b|\bLECTURE\b/i.test(cell.getAttribute('title') || cell.textContent));
 }
 
 function isLabSection(element) {
@@ -900,7 +908,11 @@ async function processProfessorElement(element) {
     return;
   }
 
-  if (isLabSection(element) || isDuplicateOptionRow(element, professorName) || !shouldShowForLectureOnly(element)) {
+  // Labs are skipped only when the course also has lectures to rate; lab-only
+  // courses (CHEM 1111, BIOL 1107) would otherwise get no badges at all
+  const skipLabs = pageHasLectureSections();
+  if ((skipLabs && (isLabSection(element) || !shouldShowForLectureOnly(element))) ||
+      isDuplicateOptionRow(element, professorName)) {
     return;
   }
 
