@@ -53,6 +53,11 @@ The extension auto-detects which school you're on — no configuration needed.
 - **Instant Ratings** — Shows RMP rating, number of reviews, difficulty, and "would take again" %
 - **Smart Matching** — Three-stage name matching with department alignment to prevent wrong-professor results
 - **Cross-School Fallback** — If a professor isn't listed at your school on RMP, searches nationally with name + department verification
+- **Hover Card** — Hover a badge for difficulty, "would take again" %, and recent reviews
+- **Grade Distributions (UH)** — The hover card shows the instructor's A–F breakdown, average GPA, and W rate for that course from [CougarGrades](https://cougargrades.io)
+- **Copy Class Number (PeopleSoft)** — Copy a section's class number from the hover card to paste into your shopping cart
+- **Name Handling** — Matches middle names and initials ("J. Bryan Cole"), hyphenated and two-word surnames ("LeVeaux-Haley", "St. Hill"), and rejects same-surname professors with a different first name
+- **Lab-Only Courses** — Lab rows are skipped when a lecture shows the same instructor, but lab-only courses (e.g. CHEM 1111) still get badges
 - **One-Click Access** — Click any badge to open the full RMP profile
 - **Smart Caching** — Ratings cached locally for 7 days to minimize API calls
 - **Dynamic Content** — MutationObserver handles pages that load instructors asynchronously
@@ -65,6 +70,7 @@ The extension auto-detects which school you're on — no configuration needed.
 | Branch | Purpose |
 |--------|---------|
 | `main` | Production build — all schools enabled |
+| `coursemate-uh` | University of Houston specific work (CougarGrades, copy class number) |
 | `coursemate-texas-state` | Texas State University specific work |
 | `coursemate-texas-am` | Texas A&M University specific work |
 | `coursemate-texas-tech` | Texas Tech University specific work |
@@ -80,17 +86,18 @@ School-specific changes go on that school's branch. Anything that ships to all s
 3. Background checks local cache — if miss, queries RateMyProfessors GraphQL API
 4. Three-stage matching: exact name + dept → prefix match + dept → cross-school fallback
 5. Badge injected next to the instructor name with rating, difficulty, and "would take again" %
+6. On UH pages, the course code is read from the page header and the instructor's grade history is pulled from the CougarGrades API for the hover card
 
 ---
 
 ## Privacy & Permissions
 
 - **`storage`** — Cache ratings and settings locally
-- **`host_permissions`** — Run on supported university registration pages and fetch from RateMyProfessors
+- **`host_permissions`** — Run on supported university registration pages and fetch from RateMyProfessors (and CougarGrades on UH pages)
 - No personal data collected. No browsing history tracked. All cached data stays on your device.
 
 ---
 
 ## Disclaimer
 
-CourseMate is not affiliated with, endorsed by, or connected to RateMyProfessors or any university listed above. All professor ratings are user-submitted content sourced from RateMyProfessors.com.
+CourseMate is not affiliated with, endorsed by, or connected to RateMyProfessors or any university listed above. All professor ratings are user-submitted content sourced from RateMyProfessors.com. UH grade data comes from CougarGrades.io.
