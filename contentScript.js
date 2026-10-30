@@ -85,7 +85,17 @@ function extractProfessorName(element) {
     return text;
   }
 
-  let text = element.textContent.trim();
+  // Read only the first line: PeopleSoft may have saved an old badge into the
+  // field as extra lines ("Beatrice Constante<br>4.5<br>(542)")
+  let text = '';
+  for (const node of element.childNodes) {
+    if (node.nodeType === Node.ELEMENT_NODE &&
+        (node.tagName === 'BR' || node.classList.contains('coursemate-badge'))) {
+      break;
+    }
+    text += node.textContent;
+  }
+  text = text.trim();
 
   // Skip empty or very short text
   if (!text || text.length < 3) return null;
@@ -680,6 +690,15 @@ function createErrorBadge(message) {
 /**
  * Insert badge next to professor name
  */
+// PeopleSoft saves the contents of ps_box-value spans into its page state and
+// re-renders them as plain text ("Name<br>4.5<br>(542)"), so badges must sit
+// beside those spans rather than inside them.
+function isSiblingBadgeSpan(element) {
+  if (element.tagName !== 'SPAN') return false;
+  return element.parentElement?.getAttribute('role') === 'option' ||
+    element.classList.contains('ps_box-value');
+}
+
 function insertBadge(element, badge) {
   // Anchor tag (Banner SSB with an instructor link): insert badge as sibling after the anchor
   if (element.tagName === 'A') {
@@ -711,8 +730,9 @@ function insertBadge(element, badge) {
     return;
   }
 
-  // CollegeScheduler: span inside role="option" — insert after the span as a sibling
-  if (element.tagName === 'SPAN' && element.parentElement?.getAttribute('role') === 'option') {
+  // CollegeScheduler span inside role="option", or PeopleSoft field value span:
+  // insert after the span as a sibling
+  if (isSiblingBadgeSpan(element)) {
     const next = element.nextElementSibling;
     if (next && next.classList.contains('coursemate-badge')) {
       activeBadges.delete(next);
@@ -774,7 +794,7 @@ function removeBadge(element) {
     return;
   }
 
-  if (element.tagName === 'A' || (element.tagName === 'SPAN' && element.parentElement?.getAttribute('role') === 'option')) {
+  if (element.tagName === 'A' || isSiblingBadgeSpan(element)) {
     const next = element.nextElementSibling;
     if (next && next.classList.contains('coursemate-badge')) {
       activeBadges.delete(next);
