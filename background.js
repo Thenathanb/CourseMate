@@ -21,7 +21,7 @@ function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
 // Cache configuration
 const CACHE_CONFIG = {
   defaultTTL: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
-  prefix: 'courseMate_v6_'
+  prefix: 'courseMate_v7_'
 };
 
 /**
@@ -239,15 +239,17 @@ const RMPProvider = {
     return 0;
   },
 
-  _findMatch(professors, expectedFirst, expectedLast, courseInfo) {
+  _findMatch(professors, expectedFirst, expectedLast, courseInfo, middleNames = []) {
     const expFirst = expectedFirst.toLowerCase();
     const expLast = expectedLast.toLowerCase();
     const subject = courseInfo?.subject;
+    // Some instructors go by a middle name ("Mary Elizabeth Dubois" may be "Elizabeth Dubois" on RMP)
+    const expGivenNames = [expFirst, ...middleNames.map(n => n.toLowerCase()).filter(n => n.length >= 2)];
 
-    // 1. Exact first + last name match
+    // 1. Exact first (or middle) + last name match
     for (const edge of professors) {
       const prof = edge.node;
-      if (prof.firstName.toLowerCase() === expFirst &&
+      if (expGivenNames.includes(prof.firstName.toLowerCase()) &&
           prof.lastName.toLowerCase() === expLast) {
         return { found: true, data: this._buildData(prof) };
       }
@@ -278,10 +280,15 @@ const RMPProvider = {
 
       // First-name prefix match — both names must be at least 2 chars to count as evidence.
       // This blocks "S" (initial) from matching "Stephen" or "" from matching anything.
-      const firstNameMatch =
-        expFirst.length >= 2 && profFirst.length >= 2 &&
-        (profFirst.startsWith(expFirst) || expFirst.startsWith(profFirst));
+      const firstNameMatch = profFirst.length >= 2 && expGivenNames.some(given =>
+        given.length >= 2 && (profFirst.startsWith(given) || given.startsWith(profFirst)));
       if (firstNameMatch) evidenceScore += 4;
+
+      // Two full first names that disagree are different people, whatever the department:
+      // "Kathleen Kelly" must not match "Hannah Kelly" just because both teach English.
+      if (!firstNameMatch && expFirst.length >= 2 && profFirst.length >= 2) {
+        return { prof, evidenceScore: 0, rankScore };
+      }
 
       if (profLast === expLast) rankScore += 2; // tie-breaker only, not evidence
       evidenceScore += this._deptScore(prof.department, subject);
@@ -300,13 +307,13 @@ const RMPProvider = {
     return { found: true, data: this._buildData(valid[0].prof) };
   },
 
-  async search(lastName, firstName, hostname, courseInfo) {
+  async search(lastName, firstName, hostname, courseInfo, middleNames = []) {
     const { schoolId, filter } = getSchoolConfig(hostname);
     try {
       if (!PRODUCTION_MODE) console.log(`[RMP API] Attempt 1 — searching by lastName: "${lastName}"`);
       const byLast = await this._queryRMP(lastName, schoolId, filter);
       if (byLast.length > 0) {
-        const match = this._findMatch(byLast, firstName, lastName, courseInfo);
+        const match = this._findMatch(byLast, firstName, lastName, courseInfo, middleNames);
         if (match) return match;
       }
 
@@ -500,6 +507,7 @@ function parseProfessorName(fullName) {
   let firstName = '';
   let lastName = '';
   let middleInitial = '';
+  let middleNames = [];
 
   // Handle "Last, First" format
   if (cleaned.includes(',')) {
@@ -508,6 +516,7 @@ function parseProfessorName(fullName) {
     if (parts[1]) {
       const nameParts = parts[1].split(' ').filter(Boolean);
       firstName = nameParts[0] || '';
+      middleNames = nameParts.slice(1).map(n => n.replace('.', ''));
       if (nameParts.length > 1 && nameParts[1].length <= 2) {
         middleInitial = nameParts[1].replace('.', '');
       }
@@ -517,6 +526,7 @@ function parseProfessorName(fullName) {
     const parts = cleaned.split(' ').filter(Boolean);
     if (parts.length >= 2) {
       firstName = parts[0];
+      middleNames = parts.slice(1, -1).map(n => n.replace('.', ''));
       if (parts.length >= 3 && parts[1].length <= 2) {
         middleInitial = parts[1].replace('.', '');
       }
@@ -526,7 +536,7 @@ function parseProfessorName(fullName) {
     }
   }
 
-  return { firstName, lastName, middleInitial };
+  return { firstName, lastName, middleInitial, middleNames };
 }
 
 /**
@@ -534,7 +544,7 @@ function parseProfessorName(fullName) {
  */
 async function fetchProfessorData(professorName, school = 'uh.edu', courseInfo = null) {
   try {
-    const { firstName, lastName } = parseProfessorName(professorName);
+    const { firstName, lastName, middleNames } = parseProfessorName(professorName);
 
     if (!firstName || !lastName) {
       return { error: 'Invalid professor name' };
@@ -562,7 +572,7 @@ async function fetchProfessorData(professorName, school = 'uh.edu', courseInfo =
 
     // Fetch from provider (pass firstName and lastName)
     await logDebug(`Fetching from RMP API: ${lastName}, ${firstName}`);
-    const result = await DataProvider.search(lastName, firstName, school, courseInfo);
+    const result = await DataProvider.search(lastName, firstName, school, courseInfo, middleNames);
 
     // Cache the result (even if not found, to prevent repeated lookups)
     await saveToCache(cacheKey, result);

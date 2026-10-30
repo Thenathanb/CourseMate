@@ -113,7 +113,7 @@ function extractProfessorName(element) {
   // PeopleSoft / generic selectors — stricter validation
   const namePatterns = [
     /^([A-Z][a-zA-Z'\-]+),\s*([A-Z])/,       // Last, First (allows hyphens, apostrophes)
-    /^([A-Z][a-zA-Z'\-]+)\s+([A-Z]\.?\s+)?([A-Z][a-zA-Z'\-]+)$/, // First [M.] Last
+    /^[A-Z][a-zA-Z'\-]+(\s+[A-Z][a-zA-Z'\-]*\.?)*\s+[A-Z][a-zA-Z'\-]+$/, // First [Middle names | M.] Last
     /^([A-Z][A-Z'\-\s]+),\s*([A-Z][A-Z'\-\s]+)$/  // ALL CAPS: LAST, FIRST
   ];
   for (const pattern of namePatterns) {
