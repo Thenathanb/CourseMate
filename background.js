@@ -639,6 +639,215 @@ async function fetchRMPReviewsById(teacherId, count = 3) {
 }
 
 /**
+ * CougarGrades (UH only)
+ * The course endpoint returns every past section with its instructors and
+ * grade counts, so one request per course covers every professor on the page.
+ */
+const COUGARGRADES_CONFIG = {
+  apiBaseUrl: 'https://api.cougargrades.io/api',
+  siteUrl: 'https://cougargrades.io',
+  cachePrefix: 'courseMateGrades_v2_',
+  requestTimeoutMs: 15000
+};
+
+// In-flight course fetches, so many badges for one course share a single request
+const pendingCourseGradeFetches = new Map();
+
+function isUHHost(hostname) {
+  return /(^|\.)uh\.edu$/i.test(hostname || '');
+}
+
+function normalizeNamePart(value) {
+  return (value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function firstNameToken(value) {
+  return normalizeNamePart((value || '').trim().split(/\s+/)[0]);
+}
+
+async function fetchCougarGradesCourse(courseName) {
+  const response = await fetchWithTimeout(
+    `${COUGARGRADES_CONFIG.apiBaseUrl}/course/${encodeURIComponent(courseName)}`,
+    {},
+    COUGARGRADES_CONFIG.requestTimeoutMs
+  );
+  if (!response.ok) {
+    throw new Error(`CougarGrades returned ${response.status}`);
+  }
+  // Unknown courses come back as a literal null
+  return response.json();
+}
+
+// Collapse section rows into per-instructor grade totals
+function aggregateSectionsByInstructor(rows) {
+  const byInstructor = new Map();
+
+  for (const row of rows) {
+    for (const name of row.instructorNames || []) {
+      const key = `${normalizeNamePart(name.lastName)}_${normalizeNamePart(name.firstName)}`;
+      if (!byInstructor.has(key)) {
+        byInstructor.set(key, {
+          firstName: name.firstName,
+          lastName: name.lastName,
+          totals: { A: 0, B: 0, C: 0, D: 0, F: 0, W: 0 },
+          gpaSum: 0,
+          gpaWeight: 0,
+          sections: 0,
+          lastTerm: 0,
+          lastTermString: ''
+        });
+      }
+
+      const entry = byInstructor.get(key);
+      for (const letter of ['A', 'B', 'C', 'D', 'F', 'W']) {
+        entry.totals[letter] += row[letter] || 0;
+      }
+
+      const graded = (row.A || 0) + (row.B || 0) + (row.C || 0) + (row.D || 0) + (row.F || 0);
+      if (typeof row.semesterGPA === 'number' && graded > 0) {
+        entry.gpaSum += row.semesterGPA * graded;
+        entry.gpaWeight += graded;
+      }
+
+      entry.sections += 1;
+      if (row.term > entry.lastTerm) {
+        entry.lastTerm = row.term;
+        entry.lastTermString = row.termString || '';
+      }
+    }
+  }
+
+  return [...byInstructor.values()];
+}
+
+async function loadCourseGrades(subject, catalog) {
+  const courseName = `${subject} ${catalog}`;
+  const cacheKey = `${COUGARGRADES_CONFIG.cachePrefix}${subject}_${catalog}`;
+
+  const cached = await getFromCache(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  if (pendingCourseGradeFetches.has(courseName)) {
+    return pendingCourseGradeFetches.get(courseName);
+  }
+
+  const promise = (async () => {
+    const course = await fetchCougarGradesCourse(courseName);
+    let rows = course?.dataGrid?.rows || [];
+
+    // Courses renumbered under TCCNS (e.g. MATH 1431 -> MATH 2413) keep older sections under the old number
+    const formerNames = (course?.tccnsUpdates || [])
+      .filter(update => /^previously known as/i.test(update.shortMessage || ''))
+      .map(update => decodeURIComponent((update.courseHref || '').replace(/^\/c\//, '')))
+      .filter(name => name && name !== courseName);
+
+    for (const formerName of formerNames) {
+      try {
+        const former = await fetchCougarGradesCourse(formerName);
+        rows = rows.concat(former?.dataGrid?.rows || []);
+      } catch (error) {
+        console.warn(`[CourseMate] CougarGrades lookup failed for ${formerName}:`, error);
+      }
+    }
+
+    const result = { courseName, instructors: aggregateSectionsByInstructor(rows) };
+    await saveToCache(cacheKey, result);
+    return result;
+  })().finally(() => {
+    pendingCourseGradeFetches.delete(courseName);
+  });
+
+  pendingCourseGradeFetches.set(courseName, promise);
+  return promise;
+}
+
+// UH registration shows "Jae Y Kim" where CougarGrades has "Kim, Jae Youn",
+// so match on last name plus the first word of the first name.
+function findInstructorGrades(instructors, firstName, lastName, middleInitial) {
+  const lastKey = normalizeNamePart(lastName);
+  const firstKey = normalizeNamePart(firstName);
+  if (!lastKey || !firstKey) {
+    return null;
+  }
+
+  const sameLast = instructors.filter(entry => normalizeNamePart(entry.lastName) === lastKey);
+  let matches = sameLast.filter(entry => firstNameToken(entry.firstName) === firstKey);
+
+  // Shopping cart shows initials only ("E. Barbieri"); accept when the initial is unambiguous
+  if (matches.length === 0 && firstKey.length === 1) {
+    matches = sameLast.filter(entry => firstNameToken(entry.firstName).startsWith(firstKey));
+  }
+
+  if (matches.length === 0 && firstKey.length >= 2) {
+    matches = sameLast.filter(entry => {
+      const token = firstNameToken(entry.firstName);
+      return token.length >= 2 && (token.startsWith(firstKey) || firstKey.startsWith(token));
+    });
+  }
+
+  if (matches.length > 1 && middleInitial) {
+    const initial = middleInitial[0].toLowerCase();
+    const narrowed = matches.filter(entry =>
+      (entry.firstName.trim().split(/\s+/)[1] || '').toLowerCase().startsWith(initial)
+    );
+    if (narrowed.length > 0) {
+      matches = narrowed;
+    }
+  }
+
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function buildGradeDistribution(entry, courseName) {
+  const { totals } = entry;
+  const graded = totals.A + totals.B + totals.C + totals.D + totals.F;
+  const cougarGradesUrl = `${COUGARGRADES_CONFIG.siteUrl}/i/${encodeURIComponent(`${entry.lastName}, ${entry.firstName}`.toLowerCase())}`;
+
+  if (!graded) {
+    return { course: courseName, notFound: true, cougarGradesUrl };
+  }
+
+  const percent = count => Math.round((count / graded) * 100);
+  return {
+    course: courseName,
+    percentages: {
+      A: percent(totals.A),
+      B: percent(totals.B),
+      C: percent(totals.C),
+      D: percent(totals.D),
+      F: percent(totals.F)
+    },
+    gpa: entry.gpaWeight ? entry.gpaSum / entry.gpaWeight : undefined,
+    dropRate: Math.round((totals.W / (graded + totals.W)) * 1000) / 10,
+    sections: entry.sections,
+    lastTaught: entry.lastTermString,
+    cougarGradesUrl
+  };
+}
+
+async function fetchGradeData({ professorName, courseInfo, school }) {
+  if (!isUHHost(school) || !courseInfo?.subject || !courseInfo?.catalog) {
+    return null;
+  }
+
+  const { firstName, lastName, middleInitial } = parseProfessorName(professorName || '');
+  const course = await loadCourseGrades(courseInfo.subject.toUpperCase(), courseInfo.catalog);
+  const entry = findInstructorGrades(course.instructors, firstName, lastName, middleInitial);
+
+  if (!entry) {
+    return {
+      course: course.courseName,
+      notFound: true,
+      cougarGradesUrl: `${COUGARGRADES_CONFIG.siteUrl}/c/${encodeURIComponent(course.courseName)}`
+    };
+  }
+
+  return buildGradeDistribution(entry, course.courseName);
+}
+
+/**
  * Message listener for content script requests
  */
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -673,6 +882,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         sendResponse({ error: error.message });
       }
     })();
+
+    return true;
+  }
+
+  if (request.action === 'getGradeData') {
+    fetchGradeData(request || {})
+      .then(data => sendResponse(data))
+      .catch(error => {
+        console.error('[Background] Grade data error:', error);
+        sendResponse({ error: error.message });
+      });
 
     return true;
   }
