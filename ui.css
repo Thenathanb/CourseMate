@@ -331,10 +331,9 @@ td[data-property="linked"] .coursemate-badge,
 }
 
 .coursemate-copy-btn {
-  background: transparent;
-  border: 1px solid #bfdbfe;
-  border-radius: 6px;
-  padding: 2px 8px;
+  background: none;
+  border: none;
+  padding: 0;
   color: #2563eb;
   font: inherit;
   font-weight: 600;
@@ -343,7 +342,7 @@ td[data-property="linked"] .coursemate-badge,
 }
 
 .coursemate-copy-btn:hover {
-  background: #eff6ff;
+  text-decoration: underline;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -366,14 +365,5 @@ td[data-property="linked"] .coursemate-badge,
 
   .coursemate-review {
     color: #d1d5db;
-  }
-
-  .coursemate-copy-btn {
-    border-color: #2c3a44;
-    color: #93c5fd;
-  }
-
-  .coursemate-copy-btn:hover {
-    background: #2c3a44;
   }
 }

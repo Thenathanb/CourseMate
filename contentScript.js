@@ -470,6 +470,11 @@ function renderTooltipContent({ professorName, baseData, hoverData, courseInfo, 
   // Bound last: the innerHTML append above would drop earlier listeners
   const copyButton = tooltip.querySelector('.coursemate-copy-btn');
   if (copyButton) {
+    // Host pages restyle links (UH forces its own blue), so match whatever the footer links render as
+    const footerLink = tooltip.querySelector('.coursemate-tooltip-link');
+    if (footerLink) {
+      copyButton.style.color = getComputedStyle(footerLink).color;
+    }
     bindCopyClassNumber(copyButton, classNumber);
   }
 }
