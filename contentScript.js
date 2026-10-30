@@ -222,10 +222,12 @@ function isDuplicateOptionRow(element, professorName) {
   return hasLecture || !/\bLAB\b|\bLABORATORY\b/.test(upper);
 }
 
-function shouldShowForLectureOnly(element) {
+// PeopleSoft class search: find the class component link ("Lecture - 13215")
+// that lines up with this instructor within the option row
+function findClassGroup(element) {
   const row = element.closest('tr');
   if (!row) {
-    return true;
+    return null;
   }
 
   let classGroups = Array.from(
@@ -237,12 +239,12 @@ function shouldShowForLectureOnly(element) {
     );
   }
   if (classGroups.length === 0) {
-    return true;
+    return null;
   }
 
   const cell = element.closest('td');
   if (!cell) {
-    return true;
+    return null;
   }
 
   const instructorGroup = element.closest('.ps_box-longedit, .ps_box-edit, .ps_box-link') || element;
@@ -251,7 +253,33 @@ function shouldShowForLectureOnly(element) {
   );
   const elementIndex = instructorGroups.indexOf(instructorGroup);
   const classIndex = elementIndex >= 0 && elementIndex < classGroups.length ? elementIndex : 0;
-  const classText = (classGroups[classIndex]?.textContent || '').toUpperCase();
+  return classGroups[classIndex] || null;
+}
+
+// The number students enter to enroll: Banner SSB has a CRN cell, PeopleSoft
+// ends the component link with it ("Lecture - 13215")
+function findClassNumber(element) {
+  const row = element.closest('tr');
+
+  const crnCell = row?.querySelector('td[data-property="courseReferenceNumber"]');
+  const crn = crnCell?.textContent.trim();
+  if (crn && /^\d{4,6}$/.test(crn)) {
+    return crn;
+  }
+
+  let match = (findClassGroup(element)?.textContent || '').match(/-\s*(\d{4,6})\s*$/);
+
+  // Shopping cart and enrolled-class tables show "Lecture - 16789" without the
+  // class search cell markup, so fall back to the row text
+  if (!match && row) {
+    match = row.textContent.match(/[A-Za-z]\s+-\s+(\d{4,6})\b/);
+  }
+
+  return match ? match[1] : null;
+}
+
+function shouldShowForLectureOnly(element) {
+  const classText = (findClassGroup(element)?.textContent || '').toUpperCase();
 
   if (!classText) {
     return true;
@@ -375,7 +403,32 @@ function renderGradeSection(gradeData, gradeLoading, courseInfo) {
   `;
 }
 
-function renderTooltipContent({ professorName, baseData, hoverData, courseInfo, loading, error, gradeData, gradeLoading }) {
+// Copy the class number from the tooltip; reads the number passed at render
+// time, which showTooltipForBadge re-derives from the live row on every hover
+function bindCopyClassNumber(button, classNumber) {
+  const label = `Copy #${classNumber}`;
+
+  // Keep PeopleSoft's row handlers from also reacting to the click
+  button.addEventListener('mousedown', (e) => e.stopPropagation());
+  button.addEventListener('click', async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(classNumber);
+      button.textContent = 'Copied!';
+    } catch (error) {
+      console.warn('[CourseMate] Clipboard write failed:', error);
+      button.textContent = 'Copy failed';
+    }
+    setTimeout(() => {
+      if (button.isConnected) {
+        button.textContent = label;
+      }
+    }, 1500);
+  });
+}
+
+function renderTooltipContent({ professorName, baseData, hoverData, courseInfo, loading, error, gradeData, gradeLoading, classNumber }) {
   const tooltip = ensureTooltip();
   const displayName = professorName || baseData?.name || 'Professor';
   const rating = baseData?.overallRating ? baseData.overallRating.toFixed(1) : 'N/A';
@@ -406,11 +459,18 @@ function renderTooltipContent({ professorName, baseData, hoverData, courseInfo, 
     <div class="coursemate-tooltip-footer">
       ${rmpUrl ? `<a class="coursemate-tooltip-link" href="${rmpUrl}" target="_blank" rel="noreferrer">View on RMP -></a>` : '<span></span>'}
       ${cougarGradesUrl ? `<a class="coursemate-tooltip-link" href="${escapeHtml(cougarGradesUrl)}" target="_blank" rel="noreferrer">CougarGrades -></a>` : '<span></span>'}
+      ${classNumber ? `<button type="button" class="coursemate-copy-btn" title="Copy class number for enrollment">Copy #${escapeHtml(classNumber)}</button>` : ''}
     </div>
   `;
 
   if (error) {
     tooltip.innerHTML += `<div class="coursemate-tooltip-loading">${escapeHtml(error)}</div>`;
+  }
+
+  // Bound last: the innerHTML append above would drop earlier listeners
+  const copyButton = tooltip.querySelector('.coursemate-copy-btn');
+  if (copyButton) {
+    bindCopyClassNumber(copyButton, classNumber);
   }
 }
 
@@ -465,6 +525,11 @@ async function showTooltipForBadge(badge, baseData, context) {
   hoverState.requestId += 1;
   const requestId = hoverState.requestId;
 
+  // Re-read on each hover: PeopleSoft can re-render or reuse rows after the badge is added
+  context.classNumber = context.sourceElement?.isConnected
+    ? findClassNumber(context.sourceElement)
+    : null;
+
   renderTooltipContent({
     professorName: context.professorName,
     baseData,
@@ -472,7 +537,8 @@ async function showTooltipForBadge(badge, baseData, context) {
     courseInfo: context.courseInfo,
     loading: !context.hoverData,
     gradeData: context.gradeData,
-    gradeLoading: !!context.gradePromise
+    gradeLoading: !!context.gradePromise,
+    classNumber: context.classNumber
   });
 
   tooltip.classList.add('show');
@@ -490,7 +556,8 @@ async function showTooltipForBadge(badge, baseData, context) {
       loading: !context.hoverData,
       error: context.hoverData?.error,
       gradeData: context.gradeData,
-      gradeLoading: false
+      gradeLoading: false,
+      classNumber: context.classNumber
     });
     positionTooltip(badge);
   });
@@ -521,7 +588,8 @@ async function showTooltipForBadge(badge, baseData, context) {
       loading: false,
       error: context.hoverData?.error,
       gradeData: context.gradeData,
-      gradeLoading: !!context.gradePromise
+      gradeLoading: !!context.gradePromise,
+      classNumber: context.classNumber
     });
     positionTooltip(badge);
   });
@@ -608,6 +676,8 @@ function createRatingBadge(data, context) {
   const badgeContext = {
     professorName: context?.professorName,
     courseInfo: context?.courseInfo,
+    sourceElement: context?.sourceElement,
+    classNumber: null,
     hoverData: null,
     loadingPromise: null,
     gradeData: null,
@@ -865,7 +935,7 @@ async function processProfessorElement(element) {
 
     if (response.found && response.data) {
       // Has a rating — show the rating badge
-      insertProfessorBadge(element, createRatingBadge(response.data, { professorName, courseInfo }));
+      insertProfessorBadge(element, createRatingBadge(response.data, { professorName, courseInfo, sourceElement: element }));
     } else {
       // Confirmed not on RMP — show ? so student can add a rating
       insertProfessorBadge(element, createNotFoundBadge(professorName));
