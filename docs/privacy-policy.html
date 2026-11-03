@@ -48,107 +48,119 @@
   <body>
     <main>
       <h1>Privacy Policy for CourseMate</h1>
-      <p class="muted"><strong>Last Updated:</strong> January 14, 2026</p>
+      <p class="muted"><strong>Last Updated:</strong> November 2, 2026</p>
 
       <h2>Overview</h2>
       <p>
-        CourseMate is committed to protecting your privacy. This extension is
-        designed to enhance your course selection experience on supported university
-        course pages without collecting any personal information.
+        CourseMate shows RateMyProfessors ratings and CougarGrades grade distributions next to
+        instructor names on University of Houston course registration pages. It does not collect
+        any personal information.
       </p>
 
       <h2>Data Collection</h2>
       <p><strong>CourseMate does NOT collect, store, or transmit any personal information.</strong></p>
       <p>Specifically, we do NOT collect:</p>
       <ul>
-        <li>Your name, email, or contact information</li>
+        <li>Your name, email, student ID, or contact information</li>
+        <li>Your UH login or account details</li>
         <li>Your browsing history</li>
         <li>Your search queries</li>
-        <li>Your course selections</li>
+        <li>Your course selections, shopping cart, or schedule</li>
         <li>Any personally identifiable information (PII)</li>
       </ul>
+      <p>CourseMate has no server of its own and does not use analytics or tracking.</p>
 
       <h2>Data Storage</h2>
       <p>The extension stores the following data <strong>locally on your device only</strong>:</p>
       <ol>
         <li>
-          <strong>Professor Ratings Cache</strong>: RateMyProfessors ratings are cached
-          in your browser's local storage for 7 days to improve performance and reduce
-          API calls. This cache includes:
+          <strong>Professor Ratings Cache</strong>: RateMyProfessors results are cached in your
+          browser's local storage (7 days by default, adjustable in settings) to improve performance
+          and reduce API calls. This cache includes:
           <ul>
             <li>Professor names</li>
-            <li>Overall ratings</li>
-            <li>Number of ratings</li>
+            <li>Overall ratings and number of ratings</li>
             <li>Difficulty scores</li>
             <li>"Would take again" percentages</li>
-            <li>RateMyProfessors profile URLs</li>
+            <li>RateMyProfessors profile links</li>
           </ul>
         </li>
         <li>
-          <strong>Grade Distribution Cache</strong>: CougarGrades grade distribution data is cached
-          in your browser's local storage to reduce repeat requests. This cache includes:
+          <strong>Grade Distribution Cache</strong>: CougarGrades data is cached in your browser's
+          local storage to reduce repeat requests. This cache includes:
           <ul>
             <li>Course codes</li>
-            <li>Grade distribution counts and percentages</li>
-            <li>Average GPA (when available)</li>
+            <li>Instructor names</li>
+            <li>Grade distribution counts and percentages, average GPA, and withdrawal rates</li>
           </ul>
         </li>
         <li>
-          <strong>Extension Settings</strong>: User preferences such as whether debug mode
-          is enabled.
+          <strong>Extension Settings</strong>: Whether the extension is enabled, your default
+          school, how long to cache ratings, and whether debug mode is on.
         </li>
       </ol>
       <p>
         All data is stored locally using Chrome's <code>chrome.storage.local</code> API and
-        <strong>never leaves your device</strong>.
+        <strong>never leaves your device</strong>. Recent reviews shown in the hover card are
+        fetched when you hover over a badge and are not saved.
       </p>
 
       <h2>Third-Party Services</h2>
-      <p>CourseMate fetches public professor data from RateMyProfessors.com's public GraphQL API and grade distribution data from CougarGrades public datasets. When you view a supported course page:</p>
+      <p>CourseMate requests public data from two services. When you view a supported course page:</p>
       <ol>
-        <li>The extension identifies professor names on the page</li>
-        <li>It queries RateMyProfessors' public API for ratings and reviews</li>
-        <li>It queries CougarGrades public datasets for grade distributions</li>
-        <li>The results are displayed on your page and cached locally</li>
+        <li>The extension reads instructor names and the course code from the page</li>
+        <li>It queries the RateMyProfessors public GraphQL API (<code>www.ratemyprofessors.com</code>) for ratings and reviews</li>
+        <li>It queries the CougarGrades public API (<code>api.cougargrades.io</code>) for grade distributions</li>
+        <li>The results are displayed on the page and cached locally</li>
       </ol>
       <p>
         <strong>No personal information is sent to external services.</strong> Only professor
-        names, course codes, and the relevant school ID for the supported institution are used in API queries.
+        names, course codes, and the University of Houston's RateMyProfessors school ID are used in
+        these requests. These services' own privacy policies apply to requests made to them.
+      </p>
+
+      <h2>Clipboard</h2>
+      <p>
+        The "Copy #" button in the hover card copies that section's class number to your clipboard,
+        only when you click it. CourseMate never reads your clipboard.
       </p>
 
       <h2>Permissions</h2>
       <ul>
-        <li><strong>storage</strong>: To cache professor ratings locally in your browser for faster performance</li>
-        <li><strong>activeTab</strong>: To access and modify course catalog pages on supported university domains (currently *.uh.edu)</li>
-        <li><strong>host_permissions for *.uh.edu</strong>: To run the extension only on supported university websites (currently University of Houston)</li>
-        <li><strong>host_permissions for www.ratemyprofessors.com</strong>: To fetch professor ratings from the RateMyProfessors API</li>
-        <li><strong>host_permissions for cougargrades.io and unpkg.com</strong>: To fetch grade distribution data from CougarGrades public datasets</li>
+        <li><strong>storage</strong>: To cache ratings, grade data, and your settings locally in your browser</li>
+        <li><strong>host_permissions for *.uh.edu</strong>: To show ratings on University of Houston course registration pages. The extension runs only on these pages.</li>
+        <li><strong>host_permissions for www.ratemyprofessors.com</strong>: To fetch professor ratings and reviews from the RateMyProfessors API</li>
+        <li><strong>host_permissions for cougargrades.io</strong>: To fetch grade distribution data from CougarGrades</li>
       </ul>
 
       <h2>Data Sharing</h2>
       <p><strong>CourseMate does NOT share, sell, or transmit any data to third parties.</strong></p>
       <p>
-        The extension operates entirely within your browser. The only external communication
-        is with RateMyProfessors' public API and CougarGrades public datasets to fetch ratings, reviews, and grade distributions.
+        The extension operates entirely within your browser. Its only external communication is the
+        RateMyProfessors and CougarGrades requests described above.
       </p>
 
       <h2>Changes to This Policy</h2>
       <p>
         We may update this privacy policy from time to time. Any changes will be reflected in
-        the "Last Updated" date above and posted in the extension's listing on the Chrome Web Store.
+        the "Last Updated" date above and posted at this address.
       </p>
 
       <h2>Contact</h2>
-      <p>If you have questions about this privacy policy, please contact us through the Chrome Web Store support page or GitHub repository.</p>
+      <p>
+        If you have questions about this privacy policy, email
+        <a href="mailto:nathanbakare1@gmail.com">nathanbakare1@gmail.com</a> or open an issue on the
+        <a href="https://github.com/Thenathanb/CourseMate">GitHub repository</a>.
+      </p>
 
       <h2>Your Rights</h2>
       <p>You can:</p>
       <ul>
         <li><strong>Clear cached data</strong>: Click the extension icon and use the "Clear Cache" button</li>
-        <li><strong>Disable the extension</strong>: Turn it off in Chrome's extension settings</li>
+        <li><strong>Disable the extension</strong>: Turn it off in the extension's settings or in Chrome's extension settings</li>
         <li><strong>Uninstall</strong>: Remove the extension completely from your browser</li>
       </ul>
-      <p>All locally stored data will be deleted when you uninstall the extension.</p>
+      <p>All locally stored data is deleted when you uninstall the extension.</p>
 
       <p class="callout">
         <strong>CourseMate is not affiliated with or endorsed by the University of Houston, RateMyProfessors.com, or CougarGrades.io.</strong>
